@@ -148,21 +148,30 @@ const emit = defineEmits(['close', 'confirm'])
 const CONFIG = {
   cardWidthCm: 8.56,
   cardHeightCm: 5.398,
+  cardAspect: 1.586,
   guideRatio: 0.76,
-  detectMs: 90,
+
+  detectMs: 80,
   stableFrames: 6,
-  calibrationStableFrames: 3,
-  stableIou: 0.68,
-  autoMs: 760,
-  calibrationAutoMs: 420,
-  minContrast: 20,
-  minEdge: 36,
-  minHits: 180,
-  smoothing: 0.42,
-  calibrationMinConfidence: 36,
+  calibrationStableFrames: 5,
+
+  stableIou: 0.62,
+  autoMs: 720,
+  calibrationAutoMs: 520,
+
+  minContrast: 18,
+  minEdge: 32,
+  minHits: 160,
+
+  smoothing: 0.24,
+  confidenceSmoothing: 0.28,
+
+  calibrationMinConfidence: 45,
   captureMinConfidence: 52,
-  cardAspectMin: 1.38,
-  cardAspectMax: 1.86,
+
+  cardAspectMin: 1.42,
+  cardAspectMax: 1.78,
+  maxScaleJitter: 0.08,
 }
 
 const TITLES = {
@@ -177,7 +186,7 @@ const TITLES = {
 const HINTS = {
   loading: 'Allow camera access when prompted.',
   error: 'Camera could not start.',
-  calibrate: 'Place a credit card flat inside the frame. Calibration locks automatically when the card is clear.',
+  calibrate: 'Place a credit card flat inside the frame. Use a plain surface and avoid glare.',
   top: 'Remove the card. Place the item flat and keep the same camera distance.',
   side: 'Turn the item sideways. Keep the same camera distance used for the top scan.',
   result: 'These are estimates from your card scale. Adjust anything before confirming.',
@@ -216,6 +225,7 @@ const stablePct = ref(0)
 const scanMessage = ref('Looking for object...')
 const pxPerCm = ref(null)
 const cardRatio = ref(0)
+const scaleJitter = ref(1)
 
 const topDims = ref(null)
 const topPreview = ref('')
@@ -227,19 +237,42 @@ let detectTimer = null
 let autoTimer = null
 let autoFired = false
 let stableHistory = []
+let scaleHistory = []
 let lastGood = null
 let lastBox = null
 let lastFrame = ''
 
 const isCameraPhase = computed(() => ['calibrate', 'top', 'side'].includes(phase.value))
 const stepIndex = computed(() => ({ calibrate: 1, top: 2, side: 3, result: 4 }[phase.value] || 0))
-const phaseLabel = computed(() => phase.value === 'calibrate' ? 'Step 1 of 4' : phase.value === 'top' ? 'Step 2 of 4' : phase.value === 'side' ? 'Step 3 of 4' : phase.value === 'result' ? 'Step 4 of 4' : 'Scanner')
-const captureLabel = computed(() => phase.value === 'calibrate' ? 'Lock credit card scale' : phase.value === 'top' ? 'Capture top view' : 'Capture side view')
-const isCardLike = computed(() => phase.value !== 'calibrate' || (cardRatio.value >= CONFIG.cardAspectMin && cardRatio.value <= CONFIG.cardAspectMax))
+
+const phaseLabel = computed(() => {
+  if (phase.value === 'calibrate') return 'Step 1 of 4'
+  if (phase.value === 'top') return 'Step 2 of 4'
+  if (phase.value === 'side') return 'Step 3 of 4'
+  if (phase.value === 'result') return 'Step 4 of 4'
+  return 'Scanner'
+})
+
+const captureLabel = computed(() => {
+  if (phase.value === 'calibrate') return 'Lock credit card scale'
+  if (phase.value === 'top') return 'Capture top view'
+  return 'Capture side view'
+})
+
+const isCardLike = computed(() => {
+  if (phase.value !== 'calibrate') return true
+  return cardRatio.value >= CONFIG.cardAspectMin && cardRatio.value <= CONFIG.cardAspectMax
+})
 
 const readyToCapture = computed(() => {
-  const minConfidence = phase.value === 'calibrate' ? CONFIG.calibrationMinConfidence : CONFIG.captureMinConfidence
-  return stablePct.value >= 100 && confidence.value >= minConfidence && isCardLike.value
+  const minConfidence = phase.value === 'calibrate'
+    ? CONFIG.calibrationMinConfidence
+    : CONFIG.captureMinConfidence
+
+  const scaleIsStable = phase.value !== 'calibrate'
+    || (scaleHistory.length >= CONFIG.calibrationStableFrames && scaleJitter.value <= CONFIG.maxScaleJitter)
+
+  return stablePct.value >= 100 && confidence.value >= minConfidence && isCardLike.value && scaleIsStable
 })
 
 const progressRingStyle = computed(() => {
@@ -263,7 +296,9 @@ async function init() {
   loadMsg.value = 'Requesting camera...'
 
   try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera is not available in this browser.')
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Camera is not available in this browser.')
+    }
 
     mediaStream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -329,15 +364,19 @@ function detect() {
   const canvas = workRef.value
   if (!video || !canvas || frozen.value || video.readyState < 2) return
 
-  const found = analyzeFrame(video, canvas)
+  const found = phase.value === 'calibrate'
+    ? analyzeCardFrame(video, canvas)
+    : analyzeFrame(video, canvas)
 
   if (!found) {
     bboxStyle.value = lastBox ? normToStyle(lastBox.norm) : null
-    confidence.value = Math.max(0, confidence.value - 12)
+    confidence.value = Math.max(0, confidence.value - 8)
     stablePct.value = 0
     stableHistory = []
+    scaleHistory = []
     cardRatio.value = 0
-    scanMessage.value = phase.value === 'calibrate' ? 'Place card inside the guide' : 'Find the item edges'
+    scaleJitter.value = 1
+    scanMessage.value = phase.value === 'calibrate' ? 'Place card on a plain surface' : 'Find the item edges'
     return
   }
 
@@ -345,9 +384,106 @@ function detect() {
   lastGood = found
   lastBox = smoothResult(lastBox, found)
   bboxStyle.value = normToStyle(lastBox.norm)
-  confidence.value = found.confidence
+  confidence.value = Math.round(confidence.value * (1 - CONFIG.confidenceSmoothing) + found.confidence * CONFIG.confidenceSmoothing)
   scanMessage.value = found.message
   trackStability(found.rawBbox)
+}
+
+function analyzeCardFrame(video, canvas) {
+  const vW = video.videoWidth
+  const vH = video.videoHeight
+  if (!vW || !vH) return null
+
+  canvas.width = vW
+  canvas.height = vH
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(video, 0, 0)
+  lastFrame = canvas.toDataURL('image/jpeg', 0.86)
+
+  const size = Math.round(Math.min(vW, vH) * CONFIG.guideRatio)
+  const ox = Math.round((vW - size) / 2)
+  const oy = Math.round((vH - size) / 2)
+  const image = ctx.getImageData(ox, oy, size, size)
+  const data = image.data
+  const total = size * size
+  const gray = new Uint8Array(total)
+
+  let brightness = 0
+  for (let i = 0; i < data.length; i += 4) {
+    const g = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+    gray[i / 4] = g
+    brightness += g
+  }
+
+  brightness /= total
+  if (brightness < 34 || brightness > 240) return null
+
+  const bg = estimateBackground(gray, size)
+  const xs = []
+  const ys = []
+
+  for (let y = 4; y < size - 4; y += 2) {
+    for (let x = 4; x < size - 4; x += 2) {
+      const idx = y * size + x
+      const contrast = Math.abs(gray[idx] - bg)
+      const gx = Math.abs(gray[idx - 1] - gray[idx + 1])
+      const gy = Math.abs(gray[idx - size] - gray[idx + size])
+      const edge = gx + gy
+
+      if (contrast > CONFIG.minContrast || edge > CONFIG.minEdge) {
+        xs.push(x)
+        ys.push(y)
+      }
+    }
+  }
+
+  if (xs.length < CONFIG.minHits) return null
+
+  xs.sort((a, b) => a - b)
+  ys.sort((a, b) => a - b)
+
+  const trim = 0.08
+  const minX = xs[Math.floor(xs.length * trim)]
+  const maxX = xs[Math.floor(xs.length * (1 - trim))]
+  const minY = ys[Math.floor(ys.length * trim)]
+  const maxY = ys[Math.floor(ys.length * (1 - trim))]
+
+  const boxW = maxX - minX
+  const boxH = maxY - minY
+  if (boxW < size * 0.22 || boxH < size * 0.13) return null
+
+  const areaRatio = (boxW * boxH) / total
+  if (areaRatio < 0.035 || areaRatio > 0.7) return null
+
+  const ratio = Math.max(boxW, boxH) / Math.max(1, Math.min(boxW, boxH))
+  const ratioScore = 1 - Math.min(1, Math.abs(ratio - CONFIG.cardAspect) / 0.34)
+  const areaScore = clamp(areaRatio / 0.28, 0, 1)
+  const centeredScore = 1 - clamp(distanceFromCenter(minX, minY, boxW, boxH, size) / 0.38, 0, 1)
+  const confidenceValue = Math.round((ratioScore * 0.48 + areaScore * 0.24 + centeredScore * 0.28) * 100)
+
+  if (confidenceValue < 28) return null
+
+  const longPx = Math.max(boxW, boxH)
+  const shortPx = Math.min(boxW, boxH)
+  const scale = ((longPx / CONFIG.cardWidthCm) + (shortPx / CONFIG.cardHeightCm)) / 2
+
+  scaleHistory.push(scale)
+  if (scaleHistory.length > 8) scaleHistory.shift()
+  scaleJitter.value = getRelativeJitter(scaleHistory)
+
+  return {
+    dimA: 0,
+    dimB: 0,
+    confidence: confidenceValue,
+    solidity: 0.4,
+    ratio,
+    scale,
+    message: cardScanStatus(confidenceValue, ratio),
+    rawBbox: [ox + minX, oy + minY, boxW, boxH],
+    localBbox: [minX, minY, boxW, boxH],
+    norm: { x: minX / size, y: minY / size, w: boxW / size, h: boxH / size },
+  }
 }
 
 function analyzeFrame(video, canvas) {
@@ -443,23 +579,25 @@ function analyzeFrame(video, canvas) {
     confidence: confidenceValue,
     solidity: fill,
     ratio,
-    message: scanStatus(confidenceValue, ratio),
+    message: scanStatus(confidenceValue),
     rawBbox: [ox + minX, oy + minY, boxW, boxH],
     localBbox: [minX, minY, boxW, boxH],
     norm: { x: minX / size, y: minY / size, w: boxW / size, h: boxH / size },
   }
 }
 
-function scanStatus(conf, ratio) {
-  if (phase.value === 'calibrate') {
-    if (ratio < CONFIG.cardAspectMin) return 'Rotate or flatten the card'
-    if (ratio > CONFIG.cardAspectMax) return 'Fit only the card in frame'
-    if (conf < CONFIG.calibrationMinConfidence) return 'Use a plain surface'
-    return 'Card found. Hold briefly.'
-  }
-
+function scanStatus(conf) {
   if (conf > 70) return 'Ready. Hold still.'
   return 'Center and hold steady'
+}
+
+function cardScanStatus(conf, ratio) {
+  if (ratio < CONFIG.cardAspectMin) return 'Tilt card slightly or flatten it'
+  if (ratio > CONFIG.cardAspectMax) return 'Keep only the card in frame'
+  if (conf < CONFIG.calibrationMinConfidence) return 'Move card onto a plainer surface'
+  if (scaleHistory.length < CONFIG.calibrationStableFrames) return 'Card found. Hold steady.'
+  if (scaleJitter.value > CONFIG.maxScaleJitter) return 'Hold the camera still'
+  return 'Locking scale...'
 }
 
 async function captureCurrent() {
@@ -470,12 +608,14 @@ async function captureCurrent() {
 }
 
 async function captureCalibration() {
+  if (busy.value) return
+
   busy.value = true
   frozen.value = true
   stopLoop()
   doFlash()
 
-  const found = lastGood || analyzeFrame(videoRef.value, workRef.value)
+  const found = lastGood || analyzeCardFrame(videoRef.value, workRef.value)
   if (!found) return resumeWithMessage('Could not detect the card. Try more contrast.')
 
   const longPx = Math.max(found.localBbox[2], found.localBbox[3])
@@ -488,7 +628,8 @@ async function captureCalibration() {
 
   const scaleLong = longPx / CONFIG.cardWidthCm
   const scaleShort = shortPx / CONFIG.cardHeightCm
-  pxPerCm.value = (scaleLong + scaleShort) / 2
+  const currentScale = found.scale || ((scaleLong + scaleShort) / 2)
+  pxPerCm.value = median(scaleHistory.length ? scaleHistory : [currentScale]) || currentScale
 
   resetScan(false)
   phase.value = 'top'
@@ -499,6 +640,8 @@ async function captureCalibration() {
 }
 
 async function captureTop() {
+  if (busy.value) return
+
   busy.value = true
   frozen.value = true
   stopLoop()
@@ -506,7 +649,9 @@ async function captureTop() {
   await sleep(100)
 
   const found = lastGood || analyzeFrame(videoRef.value, workRef.value)
-  if (!found || !found.dimA || !found.dimB) return resumeWithMessage('Could not measure item. Try again.')
+  if (!found || !found.dimA || !found.dimB) {
+    return resumeWithMessage('Could not measure item. Try again.')
+  }
 
   topDims.value = medianDims(found)
   topDims.value.shape = guessShape(topDims.value)
@@ -521,6 +666,8 @@ async function captureTop() {
 }
 
 async function captureSide() {
+  if (busy.value) return
+
   busy.value = true
   frozen.value = true
   stopLoop()
@@ -529,7 +676,9 @@ async function captureSide() {
 
   const found = lastGood || analyzeFrame(videoRef.value, workRef.value)
   if (!topDims.value) return retakeItem()
-  if (!found || !found.dimA || !found.dimB) return resumeWithMessage('Could not measure height. Try again.')
+  if (!found || !found.dimA || !found.dimB) {
+    return resumeWithMessage('Could not measure height. Try again.')
+  }
 
   const side = medianDims(found)
   const length = Math.max(topDims.value.dimA, topDims.value.dimB)
@@ -563,10 +712,29 @@ function medianDims(fallback) {
   return { dimA: a[mid], dimB: b[mid], solidity }
 }
 
+function median(values) {
+  const sorted = [...values].filter(Boolean).sort((a, b) => a - b)
+  return sorted[Math.floor(sorted.length / 2)] || null
+}
+
+function getRelativeJitter(values) {
+  const sorted = [...values].filter(Boolean).sort((a, b) => a - b)
+  if (sorted.length < 3) return 1
+
+  const mid = sorted[Math.floor(sorted.length / 2)]
+  const min = sorted[0]
+  const max = sorted[sorted.length - 1]
+
+  return mid ? (max - min) / mid : 1
+}
+
 function trackStability(bbox) {
   stableHistory.push({ bbox, t: Date.now(), result: lastGood })
 
-  const neededFrames = phase.value === 'calibrate' ? CONFIG.calibrationStableFrames : CONFIG.stableFrames
+  const neededFrames = phase.value === 'calibrate'
+    ? CONFIG.calibrationStableFrames
+    : CONFIG.stableFrames
+
   if (stableHistory.length > neededFrames) stableHistory.shift()
 
   if (stableHistory.length < neededFrames) {
@@ -584,12 +752,15 @@ function trackStability(bbox) {
     return
   }
 
-  const autoMs = phase.value === 'calibrate' ? CONFIG.calibrationAutoMs : CONFIG.autoMs
+  const autoMs = phase.value === 'calibrate'
+    ? CONFIG.calibrationAutoMs
+    : CONFIG.autoMs
+
   stablePct.value = Math.min(100, Math.round(((Date.now() - first.t) / autoMs) * 100))
 
   if (readyToCapture.value && !autoFired) {
     autoFired = true
-    autoTimer = window.setTimeout(captureCurrent, phase.value === 'calibrate' ? 60 : 140)
+    autoTimer = window.setTimeout(captureCurrent, phase.value === 'calibrate' ? 80 : 140)
   }
 }
 
@@ -598,6 +769,8 @@ function resumeWithMessage(message) {
   confidence.value = 20
   stablePct.value = 0
   stableHistory = []
+  scaleHistory = []
+  scaleJitter.value = 1
   autoFired = false
   frozen.value = false
   busy.value = false
@@ -620,7 +793,9 @@ function resetScan(clearScale = true) {
   stablePct.value = 0
   scanMessage.value = 'Looking for object...'
   cardRatio.value = 0
+  scaleJitter.value = 1
   stableHistory = []
+  scaleHistory = []
   lastGood = null
   lastBox = null
   autoFired = false
@@ -693,6 +868,14 @@ function normToStyle(norm) {
     width: `${norm.w * size}px`,
     height: `${norm.h * size}px`,
   }
+}
+
+function distanceFromCenter(x, y, w, h, size) {
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const dx = Math.abs(cx - size / 2) / size
+  const dy = Math.abs(cy - size / 2) / size
+  return Math.sqrt(dx * dx + dy * dy)
 }
 
 function bboxIoU(a, b) {
