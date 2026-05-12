@@ -153,8 +153,9 @@
           <small>Travel achievements and delivery milestones</small>
         </div>
         <div class="stamp-grid">
-          <article v-for="(stamp, index) in passportStamps" :key="stamp.code" class="stamp-card" :class="`tone-${index % 4}`">
-            <div class="stamp-mark">
+          <article v-for="(stamp, index) in passportStamps" :key="stamp.code" class="stamp-card" :class="[`tone-${index % 4}`, { 'stamp-card--image': stamp.image }]">
+            <img v-if="stamp.image" class="stamp-image" :src="stamp.image" :alt="`${stamp.title} stamp`" />
+            <div v-else class="stamp-mark">
               <span>{{ stamp.code }}</span>
               <small>{{ stamp.kind }}</small>
             </div>
@@ -303,7 +304,12 @@ const trustChips = computed(() => profile.value.role === 'traveler'
 
 const passportStamps = computed(() => {
   const trips = mockTrips.filter(trip => trip.travelerId === profile.value.id)
-  const routeStamps = trips.slice(0, 4).map(trip => ({
+  const featuredStamps = [
+    { code: 'CAI', kind: 'earned', title: 'Cairo stamp', caption: 'Pyramids of Giza route badge', date: 'Egypt', image: '/assets/stamp-cairo.jpg' },
+    { code: 'LON', kind: 'earned', title: 'London stamp', caption: 'Postage revenue collector badge', date: 'UK', image: '/assets/stamp-london.jpg' },
+    { code: 'ROM', kind: 'earned', title: 'Roma stamp', caption: 'Colosseum route badge', date: 'Italy', image: '/assets/stamp-roma.jpg' },
+  ]
+  const routeStamps = trips.slice(0, 2).map(trip => ({
     code: cityCode(trip.destination),
     kind: trip.transportMode,
     title: `${trip.origin} to ${trip.destination}`,
@@ -312,6 +318,7 @@ const passportStamps = computed(() => {
   }))
 
   return [
+    ...featuredStamps,
     ...routeStamps,
     { code: 'KYC', kind: 'verified', title: 'Identity cleared', caption: 'Passport-grade trust check', date: 'Verified' },
     { code: 'TOP', kind: 'rating', title: 'Top rated route', caption: `${ratingLabel.value} community score`, date: 'Live' },
@@ -888,6 +895,12 @@ function handleLogout() {
   transform: translateY(-3px) rotate(-1deg);
 }
 
+.stamp-card--image {
+  color: #171a3a;
+  padding: 10px;
+  background: #f7f0dc;
+}
+
 .stamp-card::before {
   content: '';
   position: absolute;
@@ -911,6 +924,32 @@ function handleLogout() {
 .tone-1 { color: #171a3a; }
 .tone-2 { color: #2c6e7f; }
 .tone-3 { color: #9b7a28; }
+
+.stamp-card--image::before,
+.stamp-card--image::after {
+  display: none;
+}
+
+.stamp-image {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border: 1.5px solid rgba(23,26,58,.22);
+  background: #fffaf0;
+  filter: saturate(.94) contrast(1.03);
+  box-shadow: 2px 2px 0 rgba(23,26,58,.24);
+}
+
+.stamp-card--image .stamp-copy {
+  margin-top: 12px;
+}
+
+.stamp-card--image b {
+  color: rgba(23,26,58,.58);
+  margin-top: 8px;
+}
 
 .stamp-mark,
 .stamp-copy,
