@@ -3,10 +3,12 @@
     <div class="bg-orb orb1" />
     <div class="bg-orb orb2" />
 
-    <div class="card">
+    <div class="card" :class="{ 'card-thud': stamping }">
       <div class="brand">◆</div>
 
       <transition name="slide" mode="out-in">
+
+        <!-- Step 1: Personal info -->
         <div v-if="step === 1" key="step1">
           <p class="eyebrow">Welcome</p>
           <h1 class="title">Let's Get to<br />Know You</h1>
@@ -39,7 +41,8 @@
           </button>
         </div>
 
-        <div v-else key="step2">
+        <!-- Step 2: OTP verification -->
+        <div v-else-if="step === 2" key="step2">
           <p class="eyebrow">Verification</p>
           <h1 class="title">Verify Code</h1>
           <p class="subtitle">
@@ -78,10 +81,39 @@
           </button>
           <button class="btn-ghost" @click="goBack">← Back</button>
         </div>
+
+        <!-- Step 3: Success with passport stamp -->
+        <div v-else key="step3" class="success-state">
+          <div class="stamp-scene">
+            <div class="stamp-wrap" :class="{ 'stamp-animate': stampVisible }">
+              <div class="stamp">
+                <div class="stamp-ring" />
+                <div class="stamp-inner">
+                  <p class="stamp-label-top">CARRYIT</p>
+                  <div class="stamp-divider" />
+                  <p class="stamp-word">VERIFIED</p>
+                  <div class="stamp-divider" />
+                  <p class="stamp-label-bot">{{ stampDate }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="stamp-shadow" :class="{ 'shadow-animate': stampVisible }" />
+          </div>
+
+          <p class="eyebrow" style="margin-top: 28px;">All Done</p>
+          <h1 class="title">Welcome,<br />{{ form.firstName }}.</h1>
+          <p class="subtitle">Your account has been verified.<br />You're ready to start your journey.</p>
+
+          <button class="btn" style="margin-top: 32px;" @click="goHome">
+            Get Started
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+
       </transition>
     </div>
 
-    <div class="dots">
+    <div class="dots" v-if="step < 3">
       <span class="dot" :class="{ active: step === 1 }" />
       <span class="dot" :class="{ active: step === 2 }" />
     </div>
@@ -96,6 +128,8 @@ const form = reactive({ firstName: '', lastName: '', phone: '' })
 const code = reactive(['', '', '', '', '', ''])
 const otpRefs = ref([])
 const timer = ref(59)
+const stampVisible = ref(false)
+const stamping = ref(false)
 let interval = null
 
 const formatted = computed(() => {
@@ -105,6 +139,11 @@ const formatted = computed(() => {
 })
 
 const codeComplete = computed(() => code.every(d => d !== ''))
+
+const stampDate = computed(() => {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2,'0')} ${d.toLocaleString('en',{month:'short'}).toUpperCase()} ${d.getFullYear()}`
+})
 
 function startTimer() {
   clearInterval(interval)
@@ -133,7 +172,6 @@ function goBack() {
 }
 
 function resend() {
-  console.log('Resending to', form.phone)
   startTimer()
   code.fill('')
 }
@@ -159,17 +197,26 @@ function onPaste(e) {
 
 function verify() {
   if (!codeComplete.value) return
-  const entered = code.join('')
-  console.log('Code:', entered)
-  alert(`Code "${entered}" verified! Welcome, ${form.firstName}.`)
+  step.value = 3
+  // slight delay so the slide transition completes before stamp drops
+  setTimeout(() => {
+    stamping.value = true
+    setTimeout(() => { stamping.value = false }, 280)
+    stampVisible.value = true
+  }, 260)
+}
+
+function goHome() {
+  window.location.href = '/'
 }
 
 onBeforeUnmount(() => clearInterval(interval))
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;700&family=DM+Sans:wght@300;400;500&display=swap');
 
+/* ── Layout ─────────────────────────────────── */
 .wrapper {
   min-height: 100vh;
   display: flex;
@@ -187,6 +234,7 @@ onBeforeUnmount(() => clearInterval(interval))
 .orb1 { width: 380px; height: 380px; background: radial-gradient(circle, #e8d5b0, transparent 70%); top: -100px; right: -80px; }
 .orb2 { width: 280px; height: 280px; background: radial-gradient(circle, #d4c5a9, transparent 70%); bottom: -60px; left: -60px; }
 
+/* ── Card ────────────────────────────────────── */
 .card {
   background: #fff;
   border-radius: 28px;
@@ -196,18 +244,28 @@ onBeforeUnmount(() => clearInterval(interval))
   width: 100%;
   max-width: 390px;
   box-sizing: border-box;
+  transition: transform 0.08s ease;
 }
-.brand { text-align: center; color: #c8a96e; font-size: 18px; margin-bottom: 32px; }
+@keyframes card-thud {
+  0%,100% { transform: translateY(0) scale(1); }
+  30%      { transform: translateY(3px) scale(1.004); }
+  60%      { transform: translateY(-1px) scale(0.999); }
+}
+.card-thud { animation: card-thud 0.28s cubic-bezier(0.36,0.07,0.19,0.97) both; }
+
+/* ── Brand / type ────────────────────────────── */
+.brand   { text-align: center; color: #c8a96e; font-size: 18px; margin-bottom: 32px; }
 .eyebrow { font-size: 11px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; color: #c8a96e; margin: 0 0 10px; }
-.title { font-family: 'Cormorant Garamond', serif; font-size: 38px; font-weight: 300; color: #1a1714; line-height: 1.15; margin: 0 0 8px; }
-.subtitle { font-size: 14px; color: #9a9087; margin: 12px 0 0; line-height: 1.6; }
+.title   { font-family: 'Cormorant Garamond', serif; font-size: 38px; font-weight: 300; color: #1a1714; line-height: 1.15; margin: 0 0 8px; }
+.subtitle{ font-size: 14px; color: #9a9087; margin: 12px 0 0; line-height: 1.6; }
 .subtitle strong { color: #1a1714; font-weight: 500; }
 
-.fields { display: flex; flex-direction: column; gap: 28px; margin: 36px 0; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.field { position: relative; }
+/* ── Fields ─────────────────────────────────── */
+.fields  { display: flex; flex-direction: column; gap: 28px; margin: 36px 0; }
+.row     { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.field   { position: relative; }
 .phone-row { display: flex; align-items: center; gap: 10px; }
-.flag { font-size: 18px; flex-shrink: 0; }
+.flag    { font-size: 18px; flex-shrink: 0; }
 
 .input {
   width: 100%;
@@ -224,10 +282,17 @@ onBeforeUnmount(() => clearInterval(interval))
 .input::placeholder { color: #c2bbb3; font-weight: 300; }
 
 .underline { display: block; height: 1px; background: #e8e2da; position: relative; }
-.underline::after { content: ''; position: absolute; bottom: 0; left: 0; width: 0; height: 1px; background: #c8a96e; transition: width 0.35s ease; }
+.underline::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0;
+  width: 0; height: 1px;
+  background: #c8a96e;
+  transition: width 0.35s ease;
+}
 .field:focus-within .underline::after { width: 100%; }
 .hint { font-size: 11.5px; color: #9a9087; margin: 10px 0 0; line-height: 1.55; }
 
+/* ── OTP ─────────────────────────────────────── */
 .otp-row { display: flex; justify-content: center; gap: 10px; margin: 32px 0 24px; }
 .otp-box {
   width: 46px; height: 56px;
@@ -242,8 +307,14 @@ onBeforeUnmount(() => clearInterval(interval))
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
   caret-color: transparent;
 }
-.otp-box:focus { border-color: #c8a96e; box-shadow: 0 0 0 3px rgba(200,169,110,0.15); transform: translateY(-2px); background: #fff; }
+.otp-box:focus {
+  border-color: #c8a96e;
+  box-shadow: 0 0 0 3px rgba(200,169,110,0.15);
+  transform: translateY(-2px);
+  background: #fff;
+}
 
+/* ── Resend / misc ───────────────────────────── */
 .wrong-number { text-align: center; font-size: 13px; margin: 0 0 12px; }
 .wrong-number a { color: #9a9087; text-decoration: underline; text-underline-offset: 3px; }
 .wrong-number a:hover { color: #1a1714; }
@@ -251,6 +322,7 @@ onBeforeUnmount(() => clearInterval(interval))
 .resend strong { color: #1a1714; font-weight: 500; font-variant-numeric: tabular-nums; }
 .resend-link { color: #c8a96e; font-weight: 500; text-decoration: none; }
 
+/* ── Buttons ─────────────────────────────────── */
 .btn {
   width: 100%; background: #1a1714; color: #fff; border: none; border-radius: 14px;
   padding: 17px 28px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500;
@@ -263,14 +335,148 @@ onBeforeUnmount(() => clearInterval(interval))
 .btn:active { transform: translateY(0); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-.btn-ghost { width: 100%; background: transparent; border: none; color: #9a9087; font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; padding: 10px; transition: color 0.2s; }
+.btn-ghost {
+  width: 100%; background: transparent; border: none;
+  color: #9a9087; font-family: 'DM Sans', sans-serif;
+  font-size: 13px; cursor: pointer; padding: 10px;
+  transition: color 0.2s;
+}
 .btn-ghost:hover { color: #1a1714; }
 
+/* ── Step dots ───────────────────────────────── */
 .dots { display: flex; gap: 6px; margin-top: 24px; }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: #e8e2da; transition: background 0.3s, transform 0.3s; }
 .dot.active { background: #c8a96e; transform: scale(1.3); }
 
+/* ── Slide transition ────────────────────────── */
 .slide-enter-active, .slide-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
 .slide-enter-from { opacity: 0; transform: translateX(20px); }
-.slide-leave-to { opacity: 0; transform: translateX(-20px); }
+.slide-leave-to   { opacity: 0; transform: translateX(-20px); }
+
+/* ══════════════════════════════════════════════
+   PASSPORT STAMP
+══════════════════════════════════════════════ */
+.success-state { display: flex; flex-direction: column; }
+
+.stamp-scene {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0 0;
+}
+
+/* The stamp itself sits at top; starts off-screen above */
+.stamp-wrap {
+  position: relative;
+  z-index: 2;
+  /* initial: invisible, hovering above */
+  opacity: 0;
+  transform: translateY(-72px) rotate(-14deg) scale(1.08);
+  will-change: transform, opacity;
+}
+
+/* Trigger animation by adding the class */
+.stamp-wrap.stamp-animate {
+  animation: stamp-drop 0.62s cubic-bezier(0.22, 1.0, 0.36, 1) 0s both;
+}
+
+@keyframes stamp-drop {
+  0%   { opacity: 0;   transform: translateY(-72px) rotate(-14deg) scale(1.08); }
+  45%  { opacity: 1;   transform: translateY(5px)   rotate(-14deg) scale(0.96); }
+  62%  { transform: translateY(-3px) rotate(-14deg) scale(1.015); }
+  78%  { transform: translateY(1.5px) rotate(-14deg) scale(0.993); }
+  100% { opacity: 1;   transform: translateY(0)     rotate(-14deg) scale(1); }
+}
+
+/* Outer stamp ring */
+.stamp {
+  width: 154px;
+  height: 154px;
+  border: 3.5px solid #8c1f1f;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  /* ink-bleed look */
+  filter: contrast(1.25) saturate(1.1);
+}
+
+/* Inner dashed ring */
+.stamp-ring {
+  position: absolute;
+  inset: 7px;
+  border: 2px dashed #8c1f1f;
+  border-radius: 50%;
+  opacity: 0.55;
+}
+
+/* Stamp content reveals with an ink-spread feel */
+.stamp-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px;
+  /* reveal slightly after the stamp lands */
+  animation: ink-reveal 0.35s ease-out 0.42s both;
+}
+
+@keyframes ink-reveal {
+  0%   { opacity: 0; filter: blur(4px) saturate(3); transform: scale(0.92); }
+  60%  { filter: blur(0.6px) saturate(1.8); }
+  100% { opacity: 1; filter: blur(0) saturate(1); transform: scale(1); }
+}
+
+.stamp-label-top,
+.stamp-label-bot {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: #8c1f1f;
+  margin: 0;
+}
+
+.stamp-word {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #8c1f1f;
+  margin: 0;
+  line-height: 1;
+}
+
+.stamp-divider {
+  width: 40px;
+  height: 1px;
+  background: #8c1f1f;
+  opacity: 0.4;
+}
+
+/* Ground shadow under stamp — compresses on impact */
+.stamp-shadow {
+  width: 90px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(26,23,20,0.18) 0%, transparent 70%);
+  margin-top: -6px;
+  opacity: 0;
+  transform: scaleX(0.4);
+}
+
+.stamp-shadow.shadow-animate {
+  animation: shadow-grow 0.62s cubic-bezier(0.22, 1.0, 0.36, 1) 0s both;
+}
+
+@keyframes shadow-grow {
+  0%   { opacity: 0; transform: scaleX(0.3); }
+  45%  { opacity: 0.9; transform: scaleX(1.15); }
+  62%  { transform: scaleX(0.85); }
+  78%  { transform: scaleX(1.05); }
+  100% { opacity: 0.6; transform: scaleX(1); }
+}
 </style>
