@@ -147,6 +147,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useBookingsStore } from '@/stores/bookings'
+import { useAuthStore } from '@/stores/auth.js'
+import { useMessagesStore } from '@/stores/messages.js'
 import { mockBookings } from '@/data/mock.js'
 import TrustScore from '@/components/TrustScore.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -154,6 +156,8 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 const router = useRouter()
 const route = useRoute()
 const bookingsStore = useBookingsStore()
+const authStore = useAuthStore()
+const messagesStore = useMessagesStore()
 
 const booking = ref(null)
 const movingDotPosition = ref(10)
@@ -204,7 +208,14 @@ function truncate(str, len) {
 
 function chatWithTraveler() {
   const travelerId = booking.value?.travelerId || 'u1'
-  router.push(`/chat/${travelerId}`)
+  const conversationId = messagesStore.ensureConversation({
+    currentUserId: authStore.user?.id,
+    otherUserId: travelerId,
+    otherUser: { id: travelerId, name: booking.value?.travelerName || 'Traveler' },
+    bookingId: booking.value?.id,
+    seedText: `Hi ${booking.value?.travelerName || 'there'}, I am checking in about booking ${booking.value?.pickupCode || booking.value?.id}.`,
+  })
+  if (conversationId) router.push(`/chat/${conversationId}`)
 }
 
 function animateMovingDot() {

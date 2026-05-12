@@ -63,12 +63,12 @@
           <span class="bc-traveler-name">Yasmine Belhaj</span>
           <span class="bc-traveler-route">TUN → CDG · Jun 14, 08:30</span>
         </div>
-        <router-link to="/chat" class="bc-chat-btn">
+        <button class="bc-chat-btn" @click="openTravelerChat">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
           </svg>
           Chat
-        </router-link>
+        </button>
       </div>
 
       <!-- Actions -->
@@ -82,9 +82,14 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth.js'
+import { useMessagesStore } from '@/stores/messages.js'
 
 const route     = useRoute()
+const router    = useRouter()
+const authStore = useAuthStore()
+const messagesStore = useMessagesStore()
 const bookingId = Math.floor(100000 + Math.random() * 900000)
 const copied    = ref(false)
 
@@ -111,6 +116,17 @@ const timeline = [
   { title: 'In transit',        sub: 'Item is on the flight',          done: false, active: false },
   { title: 'Delivered',         sub: 'OTP confirms safe handoff',      done: false, active: false },
 ]
+
+function openTravelerChat() {
+  const conversationId = messagesStore.ensureConversation({
+    currentUserId: authStore.user?.id,
+    otherUserId: 'u1',
+    otherUser: { id: 'u1', name: 'Yasmine Belhaj' },
+    bookingId: String(route.params.id || `cit-${bookingId}`),
+    seedText: 'Booking confirmed. I am ready to coordinate pickup details here.',
+  })
+  if (conversationId) router.push(`/chat/${conversationId}`)
+}
 </script>
 
 <style scoped>

@@ -5,8 +5,8 @@
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <span class="br-header-title">Booking Requests</span>
-      <div class="br-header-badge">{{ requests.length }}</div>
-      <button v-if="requests.length > 0" class="br-match-btn" @click="openSwipe">
+      <div class="br-header-badge">{{ pendingRequests.length }}</div>
+      <button v-if="pendingRequests.length > 0" class="br-match-btn" @click="openSwipe">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
         </svg>
@@ -77,14 +77,19 @@
           "{{ req.note }}"
         </div>
 
+        <div v-if="req.status === 'accepted'" class="br-accepted-note">
+          <span>Accepted</span>
+          <strong>Conversation is ready with {{ req.name }}.</strong>
+        </div>
+
         <!-- Actions -->
         <div class="br-actions">
-          <button class="br-btn-decline" @click="handleDecline(req.id)">Decline</button>
-          <router-link to="/chat" class="br-btn-chat">
+          <button v-if="req.status !== 'accepted'" class="br-btn-decline" @click="handleDecline(req.id)">Decline</button>
+          <button class="br-btn-chat" :class="{ ready: req.status === 'accepted' }" :disabled="req.status !== 'accepted'" @click="openConversation(req)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-            Chat
-          </router-link>
-          <button class="br-btn-accept" @click="handleAccept(req.id)">Accept</button>
+            Message
+          </button>
+          <button v-if="req.status !== 'accepted'" class="br-btn-accept" @click="handleAccept(req.id)">Accept</button>
         </div>
       </div>
 
@@ -209,16 +214,21 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth.js'
+import { useMessagesStore } from '@/stores/messages.js'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const messagesStore = useMessagesStore()
 
 const requests = ref([
-  { id:'r1', name:'Khalil Mansour', rating:4.8, sends:12, avatarColor:'#2230a0', item:'Smartphone + accessories', weight:1.5, dimensions:'20×12×8 cm', value:1400, pricePerKg:25, fragile:false, timeLeft:3540, note:'Please handle carefully, it is a gift!' },
-  { id:'r2', name:'Sara Belhaj',    rating:5.0, sends:34, avatarColor:'#8485d0', item:'Cosmetics & skincare',     weight:2.2, dimensions:'25×18×12 cm', value:380, pricePerKg:25, fragile:false, timeLeft:7200, note:'' },
+  { id:'r1', bookingId:'br-r1', senderId:'req-khalil', status:'pending', name:'Khalil Mansour', rating:4.8, sends:12, avatarColor:'#2230a0', item:'Smartphone + accessories', weight:1.5, dimensions:'20x12x8 cm', value:1400, pricePerKg:25, fragile:false, timeLeft:3540, note:'Please handle carefully, it is a gift!' },
+  { id:'r2', bookingId:'br-r2', senderId:'req-sara', status:'pending', name:'Sara Belhaj', rating:5.0, sends:34, avatarColor:'#8485d0', item:'Cosmetics & skincare', weight:2.2, dimensions:'25x18x12 cm', value:380, pricePerKg:25, fragile:false, timeLeft:7200, note:'' },
 ])
 
 // Keep a full snapshot for swipe mode (so declining in swipe doesn't remove from list yet)
-const allRequests = computed(() => requests.value)
+const pendingRequests = computed(() => requests.value.filter(req => req.status === 'pending'))
+const allRequests = computed(() => pendingRequests.value)
 
 // ── Swipe match ──────────────────────────────────────────────────────────────
 const swipeMode  = ref(false)
@@ -289,15 +299,29 @@ function formatTime(secs) {
 }
 
 function handleAccept(id) {
-  const i = requests.value.findIndex(r => r.id === id)
-  if (i !== -1) {
-    requests.value.splice(i, 1)
-    router.push('/traveler/trips')
-  }
+  const req = requests.value.find(r => r.id === id)
+  if (!req) return
+  req.status = 'accepted'
+  ensureConversation(req)
 }
 function handleDecline(id) {
   const i = requests.value.findIndex(r => r.id === id)
   if (i !== -1) requests.value.splice(i, 1)
+}
+
+function ensureConversation(req) {
+  return messagesStore.ensureConversation({
+    currentUserId: authStore.user?.id,
+    otherUserId: req.senderId,
+    otherUser: { id: req.senderId, name: req.name },
+    bookingId: req.bookingId,
+    seedText: `Accepted your request for ${req.item}. Message me here so we can coordinate pickup.`,
+  })
+}
+
+function openConversation(req) {
+  const conversationId = ensureConversation(req)
+  if (conversationId) router.push(`/chat/${conversationId}`)
 }
 </script>
 
@@ -338,13 +362,17 @@ function handleDecline(id) {
 
 /* Note */
 .br-note { display:flex; align-items:flex-start; gap:8px; background:#eef0fc; border-radius:10px; padding:12px; font-size:12px; font-weight:500; color:#333; font-style:italic; line-height:1.5; }
+.br-accepted-note { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#f7f0dc; border:1.5px dashed #2230a0; border-radius:12px; padding:11px 12px; }
+.br-accepted-note span { color:#2230a0; font-size:10px; font-weight:900; letter-spacing:0.1em; text-transform:uppercase; }
+.br-accepted-note strong { color:#111; font-size:12px; font-weight:800; text-align:right; }
 
 /* Actions */
 .br-actions { display:flex; gap:8px; }
 .br-btn-decline { flex:1; background:none; border:1.5px solid rgba(17,17,17,0.18); border-radius:10px; padding:12px; font-family:'Montserrat',sans-serif; font-size:13px; font-weight:700; color:rgba(17,17,17,0.5); cursor:pointer; transition:all 0.15s; }
 .br-btn-decline:hover { border-color:#b0392e; color:#b0392e; }
-.br-btn-chat { display:flex; align-items:center; justify-content:center; gap:6px; background:#f0f0ee; border-radius:10px; padding:12px 14px; font-family:'Montserrat',sans-serif; font-size:13px; font-weight:700; color:#111; text-decoration:none; transition:background 0.15s; flex-shrink:0; }
-.br-btn-chat:hover { background:#e8dfa0; }
+.br-btn-chat { display:flex; align-items:center; justify-content:center; gap:6px; background:#f0f0ee; border:none; border-radius:10px; padding:12px 14px; font-family:'Montserrat',sans-serif; font-size:13px; font-weight:800; color:rgba(17,17,17,0.45); text-decoration:none; transition:all 0.15s; flex-shrink:0; cursor:not-allowed; }
+.br-btn-chat.ready { background:#111; color:#e8dfa0; cursor:pointer; box-shadow:0 8px 20px rgba(17,17,17,0.15); }
+.br-btn-chat.ready:hover { background:#2230a0; transform:translateY(-1px); }
 .br-btn-accept { flex:1.5; background:#2230a0; color:#e8dfa0; border:none; border-radius:10px; padding:12px; font-family:'Montserrat',sans-serif; font-size:13px; font-weight:800; cursor:pointer; transition:background 0.15s; }
 .br-btn-accept:hover { background:#111; }
 

@@ -30,12 +30,12 @@
           class="ch-conv-row"
           @click="router.push('/chat/' + conv.id)"
         >
-          <div class="ch-conv-avatar" :style="{ background: avatarColor(conv.otherUser) }">
-            {{ initials(conv.otherUser) }}
+          <div class="ch-conv-avatar" :style="{ background: avatarColor(conv.otherUserName) }">
+            {{ initials(conv.otherUserName) }}
           </div>
           <div class="ch-conv-body">
             <div class="ch-conv-top">
-              <span class="ch-conv-name" :class="{ unread: conv.unread }">{{ conv.otherUser }}</span>
+              <span class="ch-conv-name" :class="{ unread: conv.unread }">{{ conv.otherUserName }}</span>
               <span class="ch-conv-time">{{ relativeTime(conv.lastTime) }}</span>
             </div>
             <div class="ch-conv-bottom">
@@ -58,11 +58,11 @@
         <button class="ch-back" @click="router.push('/chat')">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        <div class="ch-topbar-avatar" :style="{ background: avatarColor(currentConv?.otherUser || '') }">
-          {{ initials(currentConv?.otherUser || 'U') }}
+        <div class="ch-topbar-avatar" :style="{ background: avatarColor(currentConv?.otherUserName || '') }">
+          {{ initials(currentConv?.otherUserName || 'U') }}
         </div>
         <div class="ch-topbar-info">
-          <div class="ch-topbar-name">{{ currentConv?.otherUser || 'User' }}</div>
+          <div class="ch-topbar-name">{{ currentConv?.otherUserName || 'User' }}</div>
           <div class="ch-topbar-status">
             <span class="ch-online-dot" />
             <span>Active now</span>
@@ -78,7 +78,7 @@
       <!-- Security note inside chat -->
       <div class="ch-security-note ch-security-note--chat">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        End-to-end encrypted · scoped to booking {{ currentConv?.bookingRef || '' }}
+        End-to-end encrypted and scoped to booking {{ currentConv?.bookingRef || '' }}
       </div>
 
       <!-- Messages area -->
@@ -149,35 +149,28 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth.js'
+import { useMessagesStore } from '@/stores/messages.js'
 
 const router = useRouter()
 const route  = useRoute()
+const authStore = useAuthStore()
+const messagesStore = useMessagesStore()
 
 const conversationId = computed(() => route.params.id || null)
-
-const conversations = ref([
-  { id: 'c1', otherUser: 'Yasmine B.',  lastMsg: 'I will be at the airport by 07:45.',    lastTime: new Date(Date.now() - 5 * 60 * 1000).toISOString(),  unread: true,  bookingRef: 'BK-20481' },
-  { id: 'c2', otherUser: 'Mehdi K.',    lastMsg: 'Can you take 2.5 kg instead?',            lastTime: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), unread: true,  bookingRef: 'BK-20477' },
-  { id: 'c3', otherUser: 'Amira S.',    lastMsg: 'Package delivered, thanks!',               lastTime: new Date(Date.now() - 86400 * 1000).toISOString(),    unread: false, bookingRef: 'BK-20441' },
-  { id: 'c4', otherUser: 'Omar L.',     lastMsg: 'All good, see you tomorrow.',              lastTime: new Date(Date.now() - 3 * 86400 * 1000).toISOString(), unread: false, bookingRef: 'BK-20398' },
-])
-
+const currentUserId = computed(() => authStore.user?.id)
+const conversations = computed(() => currentUserId.value ? messagesStore.listForUser(currentUserId.value) : [])
 const currentConv = computed(() => conversations.value.find(c => c.id === conversationId.value))
 const totalUnread  = computed(() => conversations.value.filter(c => c.unread).length)
 
-const allMessages = ref([
-  { id: 'm1', cid: 'c1', mine: false, text: 'Hi! I confirm I can carry your package to Paris.', ts: new Date(Date.now() - 3600 * 2 * 1000).toISOString() },
-  { id: 'm2', cid: 'c1', mine: true,  text: 'Great! It weighs about 3kg. Electronics, all original.',   ts: new Date(Date.now() - 3600 * 1.9 * 1000).toISOString() },
-  { id: 'm3', cid: 'c1', mine: false, text: 'No problem. Please pack it carefully. I leave Tuesday 08:30.', ts: new Date(Date.now() - 3600 * 1.5 * 1000).toISOString() },
-  { id: 'm4', cid: 'c1', mine: true,  text: 'Understood! Will pack with bubble wrap. Should I meet you at TUN?', ts: new Date(Date.now() - 3600 * 1.2 * 1000).toISOString() },
-  { id: 'm5', cid: 'c1', mine: false, text: 'Yes, Terminal 1, departures area. 07:30 sharp.',        ts: new Date(Date.now() - 3600 * 0.8 * 1000).toISOString() },
-  { id: 'm6', cid: 'c1', mine: true,  text: 'Perfect! I will be there. Thank you so much.',           ts: new Date(Date.now() - 3600 * 0.3 * 1000).toISOString() },
-  { id: 'm7', cid: 'c1', mine: false, text: 'I will be at the airport by 07:45.',                     ts: new Date(Date.now() - 5 * 60 * 1000).toISOString() },
-])
-
 const filteredMessages = computed(() =>
-  allMessages.value.filter(m => m.cid === conversationId.value)
-    .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+  messagesStore.messagesForConversation(conversationId.value).map(message => ({
+    id: message.id,
+    mine: message.senderId === currentUserId.value,
+    text: message.text,
+    image: message.image,
+    ts: message.time,
+  }))
 )
 
 const groupedMessages = computed(() => {
@@ -203,11 +196,8 @@ const photoInputEl = ref(null)
 
 function send() {
   const text = draft.value.trim()
-  if (!text) return
-  const msg = { id: 'm_' + Date.now(), cid: conversationId.value, mine: true, text, ts: new Date().toISOString() }
-  allMessages.value.push(msg)
-  const conv = conversations.value.find(c => c.id === conversationId.value)
-  if (conv) { conv.lastMsg = text; conv.lastTime = msg.ts; conv.unread = false }
+  if (!text || !conversationId.value || !currentUserId.value) return
+  messagesStore.sendMessage({ conversationId: conversationId.value, senderId: currentUserId.value, text })
   draft.value = ''
   scrollDown()
   showTyping.value = true
@@ -215,9 +205,10 @@ function send() {
   setTimeout(() => {
     showTyping.value = false
     const replies = ['Got it, thanks!', 'Sure thing.', 'I will be ready.', 'Understood, see you soon!', 'Thank you for the update.']
-    const reply = { id: 'm_' + (Date.now() + 1), cid: conversationId.value, mine: false, text: replies[Math.floor(Math.random() * replies.length)], ts: new Date().toISOString() }
-    allMessages.value.push(reply)
-    if (conv) { conv.lastMsg = reply.text; conv.lastTime = reply.ts }
+    const senderId = currentConv.value?.otherUserId
+    if (senderId) {
+      messagesStore.sendMessage({ conversationId: conversationId.value, senderId, text: replies[Math.floor(Math.random() * replies.length)] })
+    }
     scrollDown()
   }, 1800)
 }
@@ -226,12 +217,9 @@ function triggerPhoto() { photoInputEl.value?.click() }
 
 function handlePhoto(e) {
   const file = e.target.files?.[0]
-  if (!file) return
+  if (!file || !conversationId.value || !currentUserId.value) return
   const url = URL.createObjectURL(file)
-  const msg = { id: 'm_' + Date.now(), cid: conversationId.value, mine: true, image: url, ts: new Date().toISOString() }
-  allMessages.value.push(msg)
-  const conv = conversations.value.find(c => c.id === conversationId.value)
-  if (conv) { conv.lastMsg = '[Photo]'; conv.lastTime = msg.ts }
+  messagesStore.sendMessage({ conversationId: conversationId.value, senderId: currentUserId.value, text: '[Photo]', image: url })
   scrollDown()
   e.target.value = ''
 }
@@ -244,13 +232,12 @@ async function scrollDown() {
 onMounted(() => { if (conversationId.value) scrollDown() })
 watch(() => route.params.id, () => { if (conversationId.value) scrollDown() })
 
-// Helpers
 function initials(name) {
   if (!name) return 'U'
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
 
-const COLORS = ['#2230a0', '#8485d0', '#111', '#3b6d11', '#854f0b']
+const COLORS = ['#171a3a', '#cf3a2c', '#2c6e7f', '#9b7a28', '#111']
 function avatarColor(name) {
   if (!name) return COLORS[0]
   let h = 0

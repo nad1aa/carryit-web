@@ -110,9 +110,13 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth.js'
+import { mockUsers } from '@/data/mock.js'
 
 const router      = useRouter()
+const route       = useRoute()
+const authStore   = useAuthStore()
 const email       = ref('')
 const password    = ref('')
 const showPw      = ref(false)
@@ -149,15 +153,24 @@ const ROLE_ROUTES = {
 async function submit() {
   loading.value = true
   await new Promise(r => setTimeout(r, 900))
+  const selectedRole = role.value === 'both' ? 'sender' : role.value
+  const user =
+    mockUsers.find(item => item.email.toLowerCase() === email.value.toLowerCase()) ||
+    mockUsers.find(item => item.role === selectedRole) ||
+    mockUsers[0]
+  authStore.setUser(user)
   loading.value = false
-  router.push(ROLE_ROUTES[role.value])
+  router.push(route.query.redirect || ROLE_ROUTES[role.value])
 }
 
 async function handleSSO(provider) {
   ssoLoading.value = provider
   await new Promise(r => setTimeout(r, 1100))
+  const selectedRole = role.value === 'both' ? 'sender' : role.value
+  const user = mockUsers.find(item => item.role === selectedRole) || mockUsers[0]
+  authStore.setUser(user)
   ssoLoading.value = ''
-  router.push(ROLE_ROUTES[role.value])
+  router.push(route.query.redirect || ROLE_ROUTES[role.value])
 }
 </script>
 

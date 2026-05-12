@@ -5,9 +5,9 @@
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <span class="ad-header-title">Live Tracker</span>
-      <router-link to="/chat" class="ad-chat-btn">
+      <button class="ad-chat-btn" @click="openChat">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-      </router-link>
+      </button>
     </header>
 
     <main class="ad-body">
@@ -130,9 +130,14 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth.js'
+import { useMessagesStore } from '@/stores/messages.js'
 
 const route      = useRoute()
+const router     = useRouter()
+const authStore  = useAuthStore()
+const messagesStore = useMessagesStore()
 const bookingId  = route.params.id || 'b1'
 const progress   = ref(62) // percent along route
 const showPhotos = ref(false)
@@ -167,6 +172,17 @@ onMounted(() => {
   raf = requestAnimationFrame(animate)
 })
 onUnmounted(() => cancelAnimationFrame(raf))
+
+function openChat() {
+  const conversationId = messagesStore.ensureConversation({
+    currentUserId: authStore.user?.id,
+    otherUserId: 'u2',
+    otherUser: { id: 'u2', name: 'Marie Laurent' },
+    bookingId,
+    seedText: 'Live delivery chat is open for this booking.',
+  })
+  if (conversationId) router.push(`/chat/${conversationId}`)
+}
 
 const timeline = [
   { title: 'Booking confirmed',  time: '08:00', sub: 'Payment held in escrow · #CIT-170726', done: true,  active: false },
