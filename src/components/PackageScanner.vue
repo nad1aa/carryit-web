@@ -356,78 +356,101 @@ function detect() {
 function analyzeFrame(video, canvas) {
   const vW = video.videoWidth
   const vH = video.videoHeight
+
   if (!vW || !vH) return null
 
-  canvas.width  = vW
+  canvas.width = vW
   canvas.height = vH
 
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  const ctx = canvas.getContext('2d', {
+    willReadFrequently: true
+  })
+
   ctx.drawImage(video, 0, 0)
 
-  // Extract only the guide-frame region
   const gs = Math.round(Math.min(vW, vH) * GUIDE_FRAC)
   const gx = Math.round((vW - gs) / 2)
   const gy = Math.round((vH - gs) / 2)
 
-  const { data } = ctx.getImageData(gx, gy, gs, gs)
+  const img = ctx.getImageData(gx, gy, gs, gs)
+  const data = img.data
 
-  let minX = gs, maxX = 0, minY = gs, maxY = 0
-  let itemPx = 0
+  let minX = gs
+  let minY = gs
+  let maxX = 0
+  let maxY = 0
+  let edgeCount = 0
 
-  // Adaptive threshold: scan a few border pixels to estimate background brightness
-  let bgSample = 0, bgCount = 0
-  const sample = (i) => { bgSample += data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114; bgCount++ }
-  for (let x = 0; x < gs; x += 4) {
-    sample(x * 4)                        // top row
-    sample(((gs - 1) * gs + x) * 4)      // bottom row
-  }
-  for (let y = 0; y < gs; y += 4) {
-    sample(y * gs * 4)                   // left col
-    sample((y * gs + gs - 1) * 4)        // right col
-  }
-  const bgBrightness = bgCount > 0 ? bgSample / bgCount : 200
-  // Use 75% of background brightness as threshold — works for both dark and light backgrounds
-  const threshold = Math.max(60, Math.min(220, bgBrightness * 0.75))
+  const gray = new Uint8Array(gs * gs)
 
+  // grayscale
   for (let i = 0; i < data.length; i += 4) {
-    const luma = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114
-    if (luma < threshold) {
-      const px = (i >> 2) % gs
-      const py = (i >> 2) / gs | 0
-      if (px < minX) minX = px
-      if (px > maxX) maxX = px
-      if (py < minY) minY = py
-      if (py > maxY) maxY = py
-      itemPx++
+    const idx = i / 4
+
+    gray[idx] =
+      data[i] * 0.299 +
+      data[i + 1] * 0.587 +
+      data[i + 2] * 0.114
+  }
+
+  // edge detect
+  for (let y = 1; y < gs - 1; y++) {
+    for (let x = 1; x < gs - 1; x++) {
+
+      const idx = y * gs + x
+
+      const gxv =
+        -gray[idx - gs - 1] +
+         gray[idx - gs + 1] +
+        -2 * gray[idx - 1] +
+         2 * gray[idx + 1] +
+        -gray[idx + gs - 1] +
+         gray[idx + gs + 1]
+
+      const gyv =
+        -gray[idx - gs - 1] -
+         2 * gray[idx - gs] -
+         gray[idx - gs + 1] +
+         gray[idx + gs - 1] +
+         2 * gray[idx + gs] +
+         gray[idx + gs + 1]
+
+      const mag = Math.sqrt(gxv * gxv + gyv * gyv)
+
+      if (mag > 55) {
+        edgeCount++
+
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
     }
   }
 
-  // Reject noise / too small detection
-  const minArea = gs * gs * 0.02   // at least 2% of guide area
-  if (itemPx < minArea || maxX <= minX || maxY <= minY) return null
+  if (edgeCount < 400) return null
 
-  // Reject detection that touches all 4 borders (= no item, just noise)
-  const touchBorder = minX < 4 && minY < 4 && maxX > gs - 4 && maxY > gs - 4
-  if (touchBorder) return null
+  const bboxW = maxX - minX
+  const bboxH = maxY - minY
 
-  // Pad slightly
-  const pad = Math.round(gs * 0.015)
-  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad)
-  maxX = Math.min(gs, maxX + pad); maxY = Math.min(gs, maxY + pad)
+  if (bboxW < 30 || bboxH < 30) return null
 
-  const bboxW   = maxX - minX
-  const bboxH   = maxY - minY
-  const solidity = itemPx / (bboxW * bboxH)
-  const scale    = GUIDE_CM / gs
+  const scale = GUIDE_CM / gs
 
   return {
-    dimA:     Math.max(1, Math.round(bboxW * scale)),
-    dimB:     Math.max(1, Math.round(bboxH * scale)),
-    solidity,
-    rawBbox:  [gx + minX, gy + minY, bboxW, bboxH],   // video px coords
-    norm:     { x: minX / gs, y: minY / gs, w: bboxW / gs, h: bboxH / gs },
+    dimA: Math.max(1, Math.round(bboxW * scale)),
+    dimB: Math.max(1, Math.round(bboxH * scale)),
+    solidity: Math.min(1, edgeCount / (bboxW * bboxH)),
+    rawBbox: [gx + minX, gy + minY, bboxW, bboxH],
+    norm: {
+      x: minX / gs,
+      y: minY / gs,
+      w: bboxW / gs,
+      h: bboxH / gs
+    }
   }
 }
+
 
 // ─── stability tracking ───────────────────────────────────────────────────────
 function trackStability(bbox) {
