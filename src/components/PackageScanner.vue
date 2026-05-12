@@ -253,54 +253,73 @@ const phaseIdx = computed(() => ({ top: 1, side: 2, result: 3 }[phase.value] ?? 
 
 // ─── camera init ──────────────────────────────────────────────────────────────
 async function init() {
-  phase.value  = 'loading'
-  loadPct.value = 0
-  loadMsg.value = 'Requesting camera permission…'
 
-  // Stop any existing stream
-  stopStream()
-
-  // Request camera — try rear first, fall back to any camera
   try {
-    try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      })
-    } catch {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+
+    // IMPORTANT:
+    // render video FIRST
+    phase.value = 'camera'
+
+    await nextTick()
+
+    const video = videoRef.value
+
+    if (!video) {
+      console.error('VIDEO ELEMENT NOT FOUND')
+      return
     }
-  } catch (e) {
-    phase.value  = 'error'
-    errTitle.value = permissionErrorTitle(e)
-    errSub.value   = permissionErrorSub(e)
-    return
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: {
+          ideal: 'environment'
+        }
+      },
+      audio: false
+    })
+
+    video.srcObject = stream
+
+    // SAFARI FIX
+    video.setAttribute('playsinline', true)
+
+    await video.play()
+
+    // wait for actual frames
+    await new Promise(resolve => {
+
+      const check = () => {
+
+        if (
+          video.videoWidth > 0 &&
+          video.videoHeight > 0
+        ) {
+          resolve()
+        } else {
+          requestAnimationFrame(check)
+        }
+      }
+
+      check()
+    })
+
+    console.log(
+      'VIDEO READY',
+      video.videoWidth,
+      video.videoHeight
+    )
+
+    startDetection()
+
+  } catch (err) {
+
+    console.error(err)
+
+    alert(
+      'Camera failed.\n\n' +
+      err.message
+    )
   }
-
-  loadPct.value = 70
-  loadMsg.value = 'Camera ready, starting preview…'
-
-  await nextTick()
-
-  const video = videoRef.value
-  if (!video) return
-
-  video.srcObject = mediaStream
-
-  // Wait for video to be playable (with timeout fallback for Safari)
-  await Promise.race([
-    new Promise(r => video.addEventListener('canplay', r, { once: true })),
-    new Promise(r => setTimeout(r, 3000)),
-  ])
-
-  // Ensure video is playing (required on some iOS versions)
-  try { await video.play() } catch { /* already autoplaying */ }
-
-  loadPct.value = 100
-  await new Promise(r => setTimeout(r, 180))
-
-  phase.value = 'top'
-  startLoop()
 }
 
 function permissionErrorTitle(e) {
