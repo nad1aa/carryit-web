@@ -110,7 +110,7 @@
       </button>
 
       <!-- 3D Scanner shortcut -->
-      <button class="st-scanner-card" @click="router.push('/delivery/scan')">
+      <button class="st-scanner-card" @click="scannerOpen = true">
         <div class="st-scanner-icon">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2230a0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
@@ -196,6 +196,22 @@
       </div>
     </main>
 
+    <!-- Scan result toast -->
+    <transition name="st-toast">
+      <div v-if="scanResult" class="st-scan-toast">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <span>{{ scanResult.length }}×{{ scanResult.width }}×{{ scanResult.height }} cm · {{ scanResult.weight }} kg · {{ scanResult.shape }}</span>
+        <button @click="scanResult = null" class="st-toast-x">✕</button>
+      </div>
+    </transition>
+
+    <!-- Package scanner modal -->
+    <PackageScanner
+      v-if="scannerOpen"
+      @close="scannerOpen = false"
+      @confirm="onScanConfirm"
+    />
+
     <!-- Bottom tab bar -->
     <nav class="st-tab-bar">
       <router-link to="/sender/search" class="st-tab active">
@@ -221,8 +237,21 @@
 <script setup>
 import { ref, defineComponent, h } from 'vue'
 import { useRouter } from 'vue-router'
+import PackageScanner from '@/components/PackageScanner.vue'
 
 const router = useRouter()
+
+const scannerOpen = ref(false)
+const scanResult  = ref(null)
+
+function onScanConfirm(dims) {
+  scanResult.value  = dims
+  form.value.weight = String(dims.weight)
+  // Map shape → packageType
+  const shapeToType = { envelope: 'envelope', bag: 'large', cylinder: 'small', box: 'small', irregular: 'large' }
+  form.value.packageType = shapeToType[dims.shape] ?? 'small'
+  setTimeout(() => { scanResult.value = null }, 6000)
+}
 
 const form = ref({
   from: '', to: '',
@@ -436,6 +465,24 @@ const packageTypes = [
 .status-transit   { background: #fef3c7; color: #854f0b; }
 .status-delivered { background: #d1f4d1; color: #2d5a2d; }
 .status-pending   { background: #d4d8f8; color: #2230a0; }
+
+/* Scan result toast */
+.st-scan-toast {
+  position: fixed; bottom: 80px; left: 16px; right: 16px; z-index: 400;
+  background: #111; border: 1.5px solid #22c55e; border-radius: 12px;
+  padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+  font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 700;
+  color: #fff; box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+  max-width: 508px; margin: 0 auto;
+}
+.st-scan-toast span { flex: 1; text-transform: capitalize; }
+.st-toast-x {
+  background: none; border: none; color: rgba(255,255,255,0.4);
+  font-size: 14px; cursor: pointer; padding: 2px; flex-shrink: 0;
+}
+.st-toast-x:hover { color: #fff; }
+.st-toast-enter-active, .st-toast-leave-active { transition: opacity 0.25s, transform 0.25s; }
+.st-toast-enter-from, .st-toast-leave-to { opacity: 0; transform: translateY(10px); }
 
 /* Bottom tab bar */
 .st-tab-bar {

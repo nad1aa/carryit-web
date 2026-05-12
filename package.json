@@ -8,16 +8,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.4.0",
-    "vuetify": "^3.4.0",
-    "vue-router": "^4.2.0",
+    "@mdi/font": "^7.3.67",
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
     "pinia": "^2.1.0",
-    "@mdi/font": "^7.3.67"
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.0",
+    "vuetify": "^3.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",
+    "sass": "^1.69.0",
     "vite": "^5.0.0",
-    "vite-plugin-vuetify": "^2.0.0",
-    "sass": "^1.69.0"
+    "vite-plugin-vuetify": "^2.0.0"
   }
 }
