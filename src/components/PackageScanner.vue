@@ -3,123 +3,99 @@
     <div class="ps" role="dialog" aria-modal="true">
       <div class="ps-sheet">
 
-        <!-- ── Header ── -->
+        <!-- Header -->
         <header class="ps-hdr">
-          <button class="ps-hdr-close" @click="handleClose" aria-label="Close scanner">
+          <button class="ps-hdr-close" @click="handleClose" aria-label="Close">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
           <div class="ps-hdr-center">
-            <span class="ps-hdr-title">{{ STEP_LABELS[phase] }}</span>
-            <div class="ps-step-dots">
-              <span v-for="i in 3" :key="i"
-                class="ps-dot"
-                :class="{ active: phaseIndex >= i, done: phaseIndex > i }"/>
+            <span class="ps-hdr-title">{{ TITLES[phase] }}</span>
+            <div class="ps-dots">
+              <span v-for="i in 3" :key="i" class="ps-dot"
+                :class="{ on: phaseIdx >= i, done: phaseIdx > i }"/>
             </div>
           </div>
           <div style="width:32px"/>
         </header>
 
-        <!-- ── Viewport ── -->
+        <!-- Viewport -->
         <div class="ps-viewport" ref="viewportRef">
 
-          <!-- Loading model -->
-          <div v-if="phase === 'loading'" class="ps-state-overlay">
-            <div class="ps-loading-ring"/>
-            <p class="ps-state-title">Loading scanner</p>
-            <p class="ps-state-sub">{{ loadNote }}</p>
-            <div class="ps-load-bar"><div class="ps-load-fill" :style="{ width: loadPct + '%' }"/></div>
+          <!-- Loading -->
+          <div v-if="phase === 'loading'" class="ps-overlay-state">
+            <div class="ps-ring"/>
+            <p class="ps-state-title">{{ loadMsg }}</p>
+            <div class="ps-loadbar"><div class="ps-loadbar-fill" :style="{ width: loadPct + '%' }"/></div>
           </div>
 
           <!-- Error -->
-          <div v-else-if="phase === 'error'" class="ps-state-overlay">
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cf3a2c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <div v-else-if="phase === 'error'" class="ps-overlay-state ps-overlay-err">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <circle cx="12" cy="16.5" r="0.5" fill="#cf3a2c"/>
+              <line x1="12" y1="8" x2="12" y2="13"/>
+              <circle cx="12" cy="17" r="0.5" fill="#ef4444" stroke-width="1"/>
             </svg>
-            <p class="ps-state-title">{{ errorMsg }}</p>
-            <p class="ps-state-sub">{{ errorSub }}</p>
-            <button class="ps-btn-retry-sm" @click="initScanner">Try again</button>
+            <p class="ps-state-title">{{ errTitle }}</p>
+            <p class="ps-state-sub">{{ errSub }}</p>
+            <button class="ps-btn-sm" @click="init">Try again</button>
           </div>
 
-          <!-- Camera view (phases: top, side) -->
+          <!-- Live camera (top + side phases) -->
           <template v-if="phase === 'top' || phase === 'side'">
             <video
               ref="videoRef"
               class="ps-video"
-              autoplay
-              playsinline
-              muted
-              :class="{ 'ps-video--frozen': isFrozen }"
+              autoplay playsinline muted
+              :class="{ 'ps-frozen': frozen }"
             />
+            <canvas ref="workRef" class="ps-hidden"/>
 
-            <!-- Off-screen canvases -->
-            <canvas ref="processRef" class="ps-hidden-canvas"/>
-
-            <!-- Guide frame overlay -->
-            <div class="ps-guide" :class="{ 'ps-guide--hit': stabilityPct >= 100 }">
-              <!-- Corner brackets via SVG so they scale cleanly -->
-              <svg class="ps-guide-corners" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 45 L10 10 L45 10" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
-                <path d="M155 10 L190 10 L190 45" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
-                <path d="M10 155 L10 190 L45 190" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
-                <path d="M155 190 L190 190 L190 155" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+            <!-- Guide corners -->
+            <div class="ps-guide" :class="{ 'ps-guide-hit': stabPct >= 100 }">
+              <svg class="ps-corners" viewBox="0 0 200 200" fill="none">
+                <path d="M8 44 L8 8 L44 8"   stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+                <path d="M156 8 L192 8 L192 44" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+                <path d="M8 156 L8 192 L44 192" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+                <path d="M156 192 L192 192 L192 156" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
               </svg>
-
-              <!-- Scan line (idle state) -->
-              <div v-if="!tfDetecting && !isFrozen" class="ps-scanline"/>
-
-              <!-- Phase badge -->
-              <div class="ps-phase-badge">
-                {{ phase === 'top' ? '⬆ TOP VIEW' : '➡ SIDE VIEW' }}
-              </div>
+              <div v-if="!frozen && !bboxStyle" class="ps-scanline"/>
+              <div class="ps-phase-tag">{{ phase === 'top' ? '⬆ TOP VIEW' : '➡ SIDE VIEW' }}</div>
             </div>
 
-            <!-- TF.js / canvas bounding box -->
-            <div
-              v-if="bboxStyle && !isFrozen"
+            <!-- Detected bounding box -->
+            <div v-if="bboxStyle && !frozen"
               class="ps-bbox"
-              :class="{ 'ps-bbox--stable': stabilityPct >= 100 }"
-              :style="bboxStyle"
-            >
-              <span v-if="detectedLabel" class="ps-bbox-label">{{ detectedLabel }}</span>
-
-              <!-- Stability progress ring -->
-              <svg
-                v-if="stabilityPct < 100"
-                class="ps-stab-ring"
-                viewBox="0 0 40 40"
-                fill="none"
-              >
-                <circle cx="20" cy="20" r="16" stroke="rgba(255,255,255,0.18)" stroke-width="3"/>
-                <circle
-                  cx="20" cy="20" r="16"
-                  stroke="#e8dfa0"
-                  stroke-width="3"
+              :class="{ 'ps-bbox-stable': stabPct >= 100 }"
+              :style="bboxStyle">
+              <!-- Stability arc -->
+              <svg v-if="stabPct > 0 && stabPct < 100" class="ps-arc" viewBox="0 0 44 44">
+                <circle cx="22" cy="22" r="18" stroke="rgba(255,255,255,0.15)" stroke-width="3" fill="none"/>
+                <circle cx="22" cy="22" r="18"
+                  stroke="#e8dfa0" stroke-width="3" fill="none"
                   stroke-linecap="round"
-                  :stroke-dasharray="RING_CIRC"
-                  :stroke-dashoffset="RING_CIRC - (stabilityPct / 100) * RING_CIRC"
-                  transform="rotate(-90 20 20)"
+                  :stroke-dasharray="CIRC"
+                  :stroke-dashoffset="CIRC - (stabPct / 100) * CIRC"
+                  transform="rotate(-90 22 22)"
                 />
               </svg>
             </div>
 
             <!-- Auto-capture prompt -->
-            <div v-if="stabilityPct >= 100 && !isFrozen" class="ps-autocapture-toast">
+            <div v-if="stabPct >= 100 && !frozen" class="ps-auto-badge">
               📷 Hold still…
             </div>
 
-            <!-- Flash effect -->
-            <div v-if="showFlash" class="ps-flash"/>
+            <!-- Flash -->
+            <div v-if="flash" class="ps-flash"/>
           </template>
 
-          <!-- Result: show captured frame with bbox -->
+          <!-- Result: last captured frame -->
           <template v-if="phase === 'result'">
-            <canvas ref="resultCanvasRef" class="ps-result-canvas"/>
+            <canvas ref="resultRef" class="ps-result-canvas"/>
             <div class="ps-result-badge">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="20 6 9 17 4 12"/>
               </svg>
               Scan complete
@@ -127,29 +103,30 @@
           </template>
         </div>
 
-        <!-- ── Bottom panel ── -->
+        <!-- Bottom panel -->
         <div class="ps-panel">
-
-          <!-- Hint -->
           <p v-if="HINTS[phase]" class="ps-hint">{{ HINTS[phase] }}</p>
 
-          <!-- Detection info strip -->
-          <div v-if="(phase === 'top' || phase === 'side') && detectedLabel" class="ps-det-strip">
-            <span class="ps-det-label">{{ detectedLabel }}</span>
-            <span class="ps-det-conf">{{ detectedConf }}% match</span>
-            <span class="ps-det-dot" :class="{ active: stabilityPct >= 50 }"/>
+          <!-- Detection confidence bar -->
+          <div v-if="(phase === 'top' || phase === 'side') && detConf > 0" class="ps-conf-row">
+            <span class="ps-conf-label">Object detected</span>
+            <div class="ps-conf-bar">
+              <div class="ps-conf-fill" :style="{ width: detConf + '%', background: detConf > 60 ? '#22c55e' : '#e8dfa0' }"/>
+            </div>
+            <span class="ps-conf-pct">{{ detConf }}%</span>
           </div>
+          <p v-else-if="phase === 'top' || phase === 'side'" class="ps-no-det">
+            No object detected — make sure item is on a light surface
+          </p>
 
-          <!-- Top / Side capture button -->
-          <button
-            v-if="phase === 'top' || phase === 'side'"
+          <!-- Capture buttons -->
+          <button v-if="phase === 'top' || phase === 'side'"
             class="ps-btn-capture"
             @click="phase === 'top' ? captureTop() : captureSide()"
-            :disabled="isBusy"
-          >
-            <span v-if="isBusy" class="ps-spinner"/>
+            :disabled="busy">
+            <span v-if="busy" class="ps-spinner"/>
             <template v-else>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="4"/>
                 <path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
               </svg>
@@ -157,18 +134,15 @@
             </template>
           </button>
 
-          <!-- Result: editable dimensions + confirm -->
+          <!-- Results form -->
           <template v-if="phase === 'result'">
-            <div class="ps-dims-grid">
-              <div v-for="f in DIM_FIELDS" :key="f.key" class="ps-dim-cell">
-                <label class="ps-dim-lbl">{{ f.label }}</label>
+            <div class="ps-dims">
+              <div v-for="f in FIELDS" :key="f.key" class="ps-dim-cell">
+                <label>{{ f.lbl }}</label>
                 <div class="ps-dim-row">
-                  <input
-                    v-model.number="result[f.key]"
-                    type="number"
+                  <input v-model.number="res[f.key]" type="number"
                     :min="f.min" :max="f.max" :step="f.step"
-                    class="ps-dim-input"
-                  />
+                    class="ps-dim-in" inputmode="decimal"/>
                   <span class="ps-dim-unit">{{ f.unit }}</span>
                 </div>
               </div>
@@ -176,20 +150,16 @@
 
             <div class="ps-shape-row">
               <span class="ps-shape-lbl">Shape</span>
-              <div class="ps-shape-chips">
-                <button
-                  v-for="s in SHAPES"
-                  :key="s.id"
-                  class="ps-shape-chip"
-                  :class="{ on: result.shape === s.id }"
-                  @click="result.shape = s.id"
-                >
-                  {{ s.emoji }}&nbsp;{{ s.label }}
+              <div class="ps-chips">
+                <button v-for="s in SHAPES" :key="s.id"
+                  class="ps-chip" :class="{ on: res.shape === s.id }"
+                  @click="res.shape = s.id">
+                  {{ s.e }}&nbsp;{{ s.l }}
                 </button>
               </div>
             </div>
 
-            <div class="ps-result-actions">
+            <div class="ps-actions">
               <button class="ps-btn-retake" @click="restart">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="1 4 1 10 7 10"/>
@@ -197,406 +167,192 @@
                 </svg>
                 Retake
               </button>
-              <button class="ps-btn-confirm" @click="confirm">
-                Use this scan ✓
-              </button>
+              <button class="ps-btn-confirm" @click="confirm">Use this scan ✓</button>
             </div>
           </template>
-
         </div>
+
       </div>
     </div>
   </teleport>
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 
-// ─── emits ───────────────────────────────────────────────────────────────────
 const emit = defineEmits(['close', 'confirm'])
 
-// ─── constants ───────────────────────────────────────────────────────────────
-const GUIDE_FRAC    = 0.76   // guide frame = 76% of viewport shorter side
-const GUIDE_CM      = 26     // real-world size of guide at arm's length (~30 cm)
-const RING_CIRC     = 2 * Math.PI * 16   // circumference for r=16 ring
-const STAB_FRAMES   = 8      // frames needed to consider detection stable
-const DETECT_MS     = 280    // interval between TF detections (ms)
-const AUTO_CAPTURE_MS = 1400 // ms of stability before auto-capture
+// ─── constants ────────────────────────────────────────────────────────────────
+const GUIDE_FRAC   = 0.76   // guide frame = 76% of viewport shorter side
+const GUIDE_CM     = 26     // real-world size of guide at ~30 cm distance
+const CIRC         = 2 * Math.PI * 18  // ring circumference (r=18)
+const DETECT_MS    = 250    // detection interval
+const STAB_FRAMES  = 7      // frames before stable
+const AUTO_MS      = 1600   // ms of stability → auto-capture
 
-const STEP_LABELS = {
-  loading: 'Starting scanner…',
+const TITLES = {
+  loading: 'Starting camera…',
   error:   'Camera error',
   top:     'Top-down scan',
   side:    'Side scan',
   result:  'Confirm dimensions',
 }
-
 const HINTS = {
-  top:    'Place item on a white/light surface. Hold phone flat ~30 cm above. Fill the guide.',
-  side:   'Flip item to show its side. Hold phone ~30 cm away, level with the item.',
-  result: 'Adjust any value if needed, then tap confirm.',
+  top:    'Place item on a plain light surface. Hold phone FLAT ~30 cm above. Item should fill the guide.',
+  side:   'Now show the SIDE of your item at the same distance. Fill the guide.',
+  result: 'Adjust any value if needed, then confirm.',
 }
-
 const SHAPES = [
-  { id: 'box',      emoji: '📦', label: 'Box'       },
-  { id: 'cylinder', emoji: '🥫', label: 'Cylinder'  },
-  { id: 'bag',      emoji: '👜', label: 'Bag / Soft' },
-  { id: 'envelope', emoji: '✉️',  label: 'Envelope'  },
-  { id: 'irregular',emoji: '🪨', label: 'Irregular'  },
+  { id: 'box',       e: '📦', l: 'Box'       },
+  { id: 'cylinder',  e: '🥫', l: 'Cylinder'  },
+  { id: 'bag',       e: '👜', l: 'Bag / Soft' },
+  { id: 'envelope',  e: '✉️',  l: 'Envelope'  },
+  { id: 'irregular', e: '🪨', l: 'Irregular'  },
+]
+const FIELDS = [
+  { key: 'length', lbl: 'Length', unit: 'cm',  min: 1,   max: 300, step: 1   },
+  { key: 'width',  lbl: 'Width',  unit: 'cm',  min: 1,   max: 300, step: 1   },
+  { key: 'height', lbl: 'Height', unit: 'cm',  min: 1,   max: 300, step: 1   },
+  { key: 'weight', lbl: 'Weight', unit: 'kg',  min: 0.1, max: 100, step: 0.1 },
 ]
 
-const DIM_FIELDS = [
-  { key: 'length', label: 'Length', unit: 'cm', min: 1, max: 300, step: 1 },
-  { key: 'width',  label: 'Width',  unit: 'cm', min: 1, max: 300, step: 1 },
-  { key: 'height', label: 'Height', unit: 'cm', min: 1, max: 300, step: 1 },
-  { key: 'weight', label: 'Est. weight', unit: 'kg', min: 0.1, max: 100, step: 0.1 },
-]
+// ─── state ────────────────────────────────────────────────────────────────────
+const phase   = ref('loading')
+const busy    = ref(false)
+const frozen  = ref(false)
+const flash   = ref(false)
 
-// COCO-SSD class → shape mapping
-const COCO_SHAPES = {
-  suitcase: 'bag', backpack: 'bag', handbag: 'bag',
-  bottle: 'cylinder', cup: 'cylinder', vase: 'cylinder',
-  book: 'envelope', laptop: 'envelope', 'cell phone': 'envelope', keyboard: 'envelope',
-  tv: 'box', 'remote': 'box', mouse: 'box',
-}
+const loadMsg  = ref('Requesting camera…')
+const loadPct  = ref(0)
+const errTitle = ref('')
+const errSub   = ref('')
 
-// ─── reactive state ───────────────────────────────────────────────────────────
-const phase      = ref('loading')   // loading | error | top | side | result
-const isBusy     = ref(false)
-const isFrozen   = ref(false)
-const showFlash  = ref(false)
-
-// Error state
-const errorMsg   = ref('Camera access denied')
-const errorSub   = ref('Allow camera in browser settings, then try again.')
-
-// Model loading
-const loadPct    = ref(0)
-const loadNote   = ref('Preparing camera…')
-
-// TF.js state
-const tfModel    = shallowRef(null)
-const tfDetecting = ref(false)
-const detectedLabel = ref('')
-const detectedConf  = ref(0)
-
-// Bounding box (screen-space pixels)
-const bboxStyle  = ref(null)
-
-// Stability tracking
-const stabilityHistory = ref([])  // last N bboxes
-const stabilityPct     = ref(0)
-let   stableTimer      = null
-let   detectInterval   = null
-let   autoCaptureFired = false
-
-// Media stream
-let stream = null
+// Detection
+const bboxStyle = ref(null)
+const detConf   = ref(0)
+const stabPct   = ref(0)
+const stabHistory = ref([])  // array of {bbox, t}
+let   autoTimer   = null
+let   autoFired   = false
+let   detectTimer = null
 
 // DOM refs
-const viewportRef    = ref(null)
-const videoRef       = ref(null)
-const processRef     = ref(null)
-const resultCanvasRef = ref(null)
+const viewportRef = ref(null)
+const videoRef    = ref(null)
+const workRef     = ref(null)
+const resultRef   = ref(null)
 
-// Scan results
-const topDims  = ref(null)
-const result   = ref({ length: 0, width: 0, height: 0, weight: 0, shape: 'box' })
+// Results
+const topDims = ref(null)
+const res = ref({ length: 0, width: 0, height: 0, weight: 0, shape: 'box' })
+
+let mediaStream = null
 
 // ─── computed ─────────────────────────────────────────────────────────────────
-const phaseIndex = computed(() => ({ top: 1, side: 2, result: 3 }[phase.value] ?? 0))
+const phaseIdx = computed(() => ({ top: 1, side: 2, result: 3 }[phase.value] ?? 0))
 
-// ─── init ─────────────────────────────────────────────────────────────────────
-async function initScanner() {
-  phase.value   = 'loading'
+// ─── camera init ──────────────────────────────────────────────────────────────
+async function init() {
+  phase.value  = 'loading'
   loadPct.value = 0
-  loadNote.value = 'Requesting camera…'
+  loadMsg.value = 'Requesting camera permission…'
 
-  // 1. Start camera
+  // Stop any existing stream
+  stopStream()
+
+  // Request camera — try rear first, fall back to any camera
   try {
-    stream = await startCamera()
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      })
+    } catch {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    }
   } catch (e) {
     phase.value  = 'error'
-    errorMsg.value = cameraErrorMsg(e)
-    errorSub.value = cameraErrorSub(e)
+    errTitle.value = permissionErrorTitle(e)
+    errSub.value   = permissionErrorSub(e)
     return
   }
 
-  loadPct.value  = 30
-  loadNote.value = 'Camera ready. Loading AI model…'
+  loadPct.value = 70
+  loadMsg.value = 'Camera ready, starting preview…'
 
-  // 2. Attach stream to video
   await nextTick()
-  videoRef.value.srcObject = stream
-  await new Promise(r => videoRef.value.addEventListener('loadeddata', r, { once: true }))
 
-  loadPct.value  = 50
-  loadNote.value = 'Loading object detection model…'
+  const video = videoRef.value
+  if (!video) return
 
-  // 3. Load TF.js COCO-SSD (dynamic — doesn't bloat initial bundle)
-  try {
-    const [tf, cocoSsd] = await Promise.all([
-      import('@tensorflow/tfjs'),
-      import('@tensorflow-models/coco-ssd'),
-    ])
-    loadPct.value  = 75
-    loadNote.value = 'Initialising model…'
-    await tf.ready()
-    tfModel.value  = await cocoSsd.load({ base: 'lite_mobilenet_v2' })
-    loadPct.value  = 100
-  } catch {
-    // TF.js failed — that's OK, we fall back to canvas analysis
-    tfModel.value  = null
-    loadPct.value  = 100
-  }
+  video.srcObject = mediaStream
 
-  // Small delay so user sees 100%
-  await new Promise(r => setTimeout(r, 300))
+  // Wait for video to be playable (with timeout fallback for Safari)
+  await Promise.race([
+    new Promise(r => video.addEventListener('canplay', r, { once: true })),
+    new Promise(r => setTimeout(r, 3000)),
+  ])
+
+  // Ensure video is playing (required on some iOS versions)
+  try { await video.play() } catch { /* already autoplaying */ }
+
+  loadPct.value = 100
+  await new Promise(r => setTimeout(r, 180))
+
   phase.value = 'top'
-  startDetectionLoop()
+  startLoop()
 }
 
-async function startCamera() {
-  // Try environment (rear) camera first; fall back to any video
-  const constraints = [
-    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
-    { video: { facingMode: 'environment' }, audio: false },
-    { video: true, audio: false },
-  ]
-  let lastErr
-  for (const c of constraints) {
-    try {
-      return await navigator.mediaDevices.getUserMedia(c)
-    } catch (e) {
-      lastErr = e
-      if (e.name === 'NotAllowedError') throw e   // user denied — don't retry
-    }
-  }
-  throw lastErr
-}
-
-function cameraErrorMsg(e) {
-  if (e?.name === 'NotAllowedError')    return 'Camera permission denied'
-  if (e?.name === 'NotFoundError')      return 'No camera found'
-  if (e?.name === 'NotReadableError')   return 'Camera already in use'
-  if (e?.name === 'OverconstrainedError') return 'Camera constraints not met'
+function permissionErrorTitle(e) {
+  if (e?.name === 'NotAllowedError')     return 'Camera access denied'
+  if (e?.name === 'NotFoundError')       return 'No camera found'
+  if (e?.name === 'NotReadableError')    return 'Camera already in use'
   return 'Could not start camera'
 }
-function cameraErrorSub(e) {
+function permissionErrorSub(e) {
   if (e?.name === 'NotAllowedError')
-    return 'Open browser settings → Site settings → Camera → Allow, then try again.'
+    return 'Go to Settings → Safari → Camera → Allow, then tap Try again.'
   if (e?.name === 'NotFoundError')
-    return 'This device has no accessible camera.'
-  return 'Try closing other apps using the camera, then reload.'
+    return 'No camera is accessible on this device.'
+  if (e?.name === 'NotReadableError')
+    return 'Close other apps using the camera and try again.'
+  return 'Please reload and allow camera access when prompted.'
 }
 
 // ─── detection loop ───────────────────────────────────────────────────────────
-function startDetectionLoop() {
-  stopDetectionLoop()
-  autoCaptureFired = false
-
-  if (tfModel.value) {
-    detectInterval = setInterval(runTFDetection, DETECT_MS)
-  } else {
-    detectInterval = setInterval(runCanvasDetection, DETECT_MS)
-  }
+function startLoop() {
+  stopLoop()
+  autoFired = false
+  detectTimer = setInterval(detect, DETECT_MS)
 }
 
-function stopDetectionLoop() {
-  if (detectInterval) { clearInterval(detectInterval); detectInterval = null }
-  if (stableTimer)    { clearTimeout(stableTimer);     stableTimer = null    }
-  stabilityPct.value     = 0
-  stabilityHistory.value = []
+function stopLoop() {
+  if (detectTimer) { clearInterval(detectTimer); detectTimer = null }
+  if (autoTimer)   { clearTimeout(autoTimer);    autoTimer   = null }
+  stabPct.value     = 0
+  stabHistory.value = []
 }
 
-async function runTFDetection() {
-  const video = videoRef.value
-  if (!video || video.readyState < 2 || isFrozen.value) return
-  tfDetecting.value = true
+function detect() {
+  const video  = videoRef.value
+  const canvas = workRef.value
+  if (!video || !canvas || frozen.value || video.readyState < 2) return
 
-  try {
-    const preds = await tfModel.value.detect(video)
+  const result = analyzeFrame(video, canvas)
 
-    // Pick the largest detected object
-    const best = preds
-      .filter(p => p.score > 0.4)
-      .sort((a, b) => (b.bbox[2] * b.bbox[3]) - (a.bbox[2] * a.bbox[3]))[0]
-
-    if (best) {
-      detectedLabel.value = best['class']
-      detectedConf.value  = Math.round(best.score * 100)
-      bboxStyle.value     = tfBboxToStyle(best.bbox, video)
-      updateStability(best.bbox, best['class'])
-    } else {
-      // TF found nothing — try canvas fallback for bbox
-      runCanvasDetection()
-    }
-  } catch {
-    // silently ignore detection errors
-  } finally {
-    tfDetecting.value = false
-  }
-}
-
-function runCanvasDetection() {
-  const video = videoRef.value
-  const canvas = processRef.value
-  if (!video || video.readyState < 2 || isFrozen.value || !canvas) return
-
-  const res = analyzeFrame(video, canvas)
-  if (res) {
-    bboxStyle.value = canvasBboxToStyle(res.bboxNorm)
-    if (!tfModel.value) {
-      detectedLabel.value = 'object'
-      detectedConf.value  = 0
-    }
-    updateStability(res.rawBbox, detectedLabel.value)
-  } else {
+  if (!result) {
     bboxStyle.value = null
+    detConf.value   = 0
     resetStability()
-  }
-}
-
-// ─── stability ────────────────────────────────────────────────────────────────
-function updateStability(bbox, label) {
-  const h = stabilityHistory.value
-  h.push({ bbox, label, t: Date.now() })
-  if (h.length > STAB_FRAMES) h.shift()
-
-  if (h.length < STAB_FRAMES) {
-    stabilityPct.value = (h.length / STAB_FRAMES) * 60
     return
   }
 
-  // Check bbox overlap between first and last
-  const first = h[0].bbox
-  const last  = h[h.length - 1].bbox
-  const iou   = bboxIoU(first, last)
-  const sameClass = h.every(p => p.label === h[0].label)
-
-  if (iou > 0.75 && sameClass) {
-    const elapsed = Date.now() - h[0].t
-    stabilityPct.value = Math.min(100, (elapsed / AUTO_CAPTURE_MS) * 100)
-
-    // Auto-capture when stable long enough
-    if (stabilityPct.value >= 100 && !autoCaptureFired && !isFrozen.value) {
-      autoCaptureFired = true
-      stableTimer = setTimeout(() => {
-        if (phase.value === 'top') captureTop()
-        else if (phase.value === 'side') captureSide()
-      }, 200)
-    }
-  } else {
-    resetStability()
-  }
+  bboxStyle.value = normToStyle(result.norm)
+  detConf.value   = Math.round(result.solidity * 100)
+  trackStability(result.rawBbox)
 }
 
-function resetStability() {
-  stabilityPct.value     = 0
-  stabilityHistory.value = []
-  autoCaptureFired       = false
-  if (stableTimer) { clearTimeout(stableTimer); stableTimer = null }
-}
-
-// ─── capture ──────────────────────────────────────────────────────────────────
-async function captureTop() {
-  if (isBusy.value) return
-  isBusy.value   = true
-  isFrozen.value = true
-  stopDetectionLoop()
-  triggerFlash()
-
-  await new Promise(r => setTimeout(r, 150))
-
-  const video  = videoRef.value
-  const canvas = processRef.value
-  const res    = analyzeFrame(video, canvas)
-
-  if (!res) {
-    // Nothing detected — use the entire guide as fallback
-    const s = guidePixelSide(video)
-    topDims.value = { dimA: GUIDE_CM, dimB: GUIDE_CM, shape: 'box' }
-  } else {
-    const cocoShape = COCO_SHAPES[detectedLabel.value?.toLowerCase()] ?? null
-    topDims.value = {
-      dimA:  res.dimA,
-      dimB:  res.dimB,
-      shape: cocoShape ?? guessShapeFromDims(res.dimA, res.dimB, res.solidity),
-    }
-  }
-
-  bboxStyle.value = null
-  isFrozen.value  = false
-  isBusy.value    = false
-  autoCaptureFired = false
-  phase.value     = 'side'
-  startDetectionLoop()
-}
-
-async function captureSide() {
-  if (isBusy.value) return
-  isBusy.value   = true
-  isFrozen.value = true
-  stopDetectionLoop()
-  triggerFlash()
-
-  await new Promise(r => setTimeout(r, 150))
-
-  const video  = videoRef.value
-  const canvas = processRef.value
-  const res    = analyzeFrame(video, canvas)
-
-  const height = res
-    ? Math.min(res.dimA, res.dimB)
-    : Math.max(1, Math.round(Math.min(topDims.value.dimA, topDims.value.dimB) / 3))
-
-  // Build final result
-  const l = topDims.value.dimA
-  const w = topDims.value.dimB
-  const h = height
-
-  result.value = {
-    length: l,
-    width:  w,
-    height: h,
-    weight: estimateWeight(l, w, h),
-    shape:  topDims.value.shape,
-  }
-
-  // Draw result frame to result canvas
-  await nextTick()
-  drawResultCanvas(video, canvas, res)
-
-  isFrozen.value = false
-  isBusy.value   = false
-  phase.value    = 'result'
-}
-
-function drawResultCanvas(video, workCanvas, res) {
-  const rc = resultCanvasRef.value
-  if (!rc) return
-  rc.width  = workCanvas.width  || video.videoWidth
-  rc.height = workCanvas.height || video.videoHeight
-  const ctx = rc.getContext('2d')
-  ctx.drawImage(workCanvas, 0, 0)
-
-  if (res) {
-    // Draw bbox on result canvas
-    const gx = (rc.width  - guidePixelSide(video)) / 2
-    const gy = (rc.height - guidePixelSide(video)) / 2
-    const gs = guidePixelSide(video)
-    ctx.strokeStyle = '#22c55e'
-    ctx.lineWidth   = 3
-    ctx.strokeRect(
-      gx + res.bboxNorm.x * gs,
-      gy + res.bboxNorm.y * gs,
-      res.bboxNorm.w * gs,
-      res.bboxNorm.h * gs,
-    )
-  }
-}
-
-// ─── image analysis (canvas-based, no ML required) ────────────────────────────
+// ─── canvas-based object detection ───────────────────────────────────────────
 function analyzeFrame(video, canvas) {
   const vW = video.videoWidth
   const vH = video.videoHeight
@@ -604,10 +360,12 @@ function analyzeFrame(video, canvas) {
 
   canvas.width  = vW
   canvas.height = vH
+
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   ctx.drawImage(video, 0, 0)
 
-  const gs = guidePixelSide(video)
+  // Extract only the guide-frame region
+  const gs = Math.round(Math.min(vW, vH) * GUIDE_FRAC)
   const gx = Math.round((vW - gs) / 2)
   const gy = Math.round((vH - gs) / 2)
 
@@ -615,11 +373,25 @@ function analyzeFrame(video, canvas) {
 
   let minX = gs, maxX = 0, minY = gs, maxY = 0
   let itemPx = 0
-  const THRESH = 178  // pixels brighter than this = background
+
+  // Adaptive threshold: scan a few border pixels to estimate background brightness
+  let bgSample = 0, bgCount = 0
+  const sample = (i) => { bgSample += data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114; bgCount++ }
+  for (let x = 0; x < gs; x += 4) {
+    sample(x * 4)                        // top row
+    sample(((gs - 1) * gs + x) * 4)      // bottom row
+  }
+  for (let y = 0; y < gs; y += 4) {
+    sample(y * gs * 4)                   // left col
+    sample((y * gs + gs - 1) * 4)        // right col
+  }
+  const bgBrightness = bgCount > 0 ? bgSample / bgCount : 200
+  // Use 75% of background brightness as threshold — works for both dark and light backgrounds
+  const threshold = Math.max(60, Math.min(220, bgBrightness * 0.75))
 
   for (let i = 0; i < data.length; i += 4) {
-    const luma = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
-    if (luma < THRESH) {
+    const luma = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114
+    if (luma < threshold) {
       const px = (i >> 2) % gs
       const py = (i >> 2) / gs | 0
       if (px < minX) minX = px
@@ -630,61 +402,148 @@ function analyzeFrame(video, canvas) {
     }
   }
 
-  if (itemPx < 600 || maxX <= minX || maxY <= minY) return null
+  // Reject noise / too small detection
+  const minArea = gs * gs * 0.02   // at least 2% of guide area
+  if (itemPx < minArea || maxX <= minX || maxY <= minY) return null
 
-  const pad = 8
+  // Reject detection that touches all 4 borders (= no item, just noise)
+  const touchBorder = minX < 4 && minY < 4 && maxX > gs - 4 && maxY > gs - 4
+  if (touchBorder) return null
+
+  // Pad slightly
+  const pad = Math.round(gs * 0.015)
   minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad)
   maxX = Math.min(gs, maxX + pad); maxY = Math.min(gs, maxY + pad)
 
+  const bboxW   = maxX - minX
+  const bboxH   = maxY - minY
+  const solidity = itemPx / (bboxW * bboxH)
   const scale    = GUIDE_CM / gs
-  const dimA     = Math.max(1, Math.round((maxX - minX) * scale))
-  const dimB     = Math.max(1, Math.round((maxY - minY) * scale))
-  const solidity = itemPx / ((maxX - minX) * (maxY - minY))
 
   return {
-    dimA, dimB, solidity,
-    rawBbox:  [gx + minX, gy + minY, maxX - minX, maxY - minY],
-    bboxNorm: { x: minX / gs, y: minY / gs, w: (maxX - minX) / gs, h: (maxY - minY) / gs },
+    dimA:     Math.max(1, Math.round(bboxW * scale)),
+    dimB:     Math.max(1, Math.round(bboxH * scale)),
+    solidity,
+    rawBbox:  [gx + minX, gy + minY, bboxW, bboxH],   // video px coords
+    norm:     { x: minX / gs, y: minY / gs, w: bboxW / gs, h: bboxH / gs },
   }
 }
 
-function guidePixelSide(video) {
-  return Math.round(Math.min(video.videoWidth, video.videoHeight) * GUIDE_FRAC)
-}
+// ─── stability tracking ───────────────────────────────────────────────────────
+function trackStability(bbox) {
+  const h = stabHistory.value
+  h.push({ bbox, t: Date.now() })
+  if (h.length > STAB_FRAMES) h.shift()
 
-// ─── coordinate conversion helpers ───────────────────────────────────────────
-function tfBboxToStyle(bbox, video) {
-  // bbox = [x, y, w, h] in video pixel coords
-  const vp = viewportRef.value
-  if (!vp) return null
-  const vW = video.videoWidth, vH = video.videoHeight
-  const cW = vp.clientWidth,   cH = vp.clientHeight
+  if (h.length < STAB_FRAMES) {
+    stabPct.value = (h.length / STAB_FRAMES) * 40
+    return
+  }
 
-  // object-fit: cover mapping
-  const scale = Math.max(cW / vW, cH / vH)
-  const rW    = vW * scale
-  const rH    = vH * scale
-  const oX    = (rW - cW) / 2
-  const oY    = (rH - cH) / 2
+  const iou = bboxIoU(h[0].bbox, h[h.length - 1].bbox)
+  if (iou > 0.72) {
+    const elapsed = Date.now() - h[0].t
+    stabPct.value = Math.min(100, (elapsed / AUTO_MS) * 100)
 
-  return {
-    left:   (bbox[0] * scale - oX) + 'px',
-    top:    (bbox[1] * scale - oY) + 'px',
-    width:  (bbox[2] * scale) + 'px',
-    height: (bbox[3] * scale) + 'px',
+    if (stabPct.value >= 100 && !autoFired && !frozen.value) {
+      autoFired = true
+      autoTimer = setTimeout(() => {
+        if (phase.value === 'top') captureTop()
+        else if (phase.value === 'side') captureSide()
+      }, 100)
+    }
+  } else {
+    resetStability()
   }
 }
 
-function canvasBboxToStyle(norm) {
-  // norm = { x, y, w, h } relative to guide (0..1)
+function resetStability() {
+  stabPct.value = 0
+  stabHistory.value = []
+  autoFired = false
+  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null }
+}
+
+// ─── captures ─────────────────────────────────────────────────────────────────
+async function captureTop() {
+  if (busy.value) return
+  busy.value  = true
+  frozen.value = true
+  stopLoop()
+  doFlash()
+
+  await new Promise(r => setTimeout(r, 120))
+
+  const video  = videoRef.value
+  const canvas = workRef.value
+  const found  = analyzeFrame(video, canvas)
+
+  topDims.value = found
+    ? { dimA: found.dimA, dimB: found.dimB, shape: guessShape(found) }
+    : { dimA: 20, dimB: 15, shape: 'box' }    // safe fallback
+
+  bboxStyle.value = null
+  frozen.value    = false
+  busy.value      = false
+  autoFired       = false
+  phase.value     = 'side'
+  startLoop()
+}
+
+async function captureSide() {
+  if (busy.value) return
+  busy.value   = true
+  frozen.value = true
+  stopLoop()
+  doFlash()
+
+  await new Promise(r => setTimeout(r, 120))
+
+  const video  = videoRef.value
+  const canvas = workRef.value
+  const found  = analyzeFrame(video, canvas)
+
+  // Snapshot frame for result preview
+  await nextTick()
+  if (resultRef.value && canvas.width) {
+    resultRef.value.width  = canvas.width
+    resultRef.value.height = canvas.height
+    resultRef.value.getContext('2d').drawImage(canvas, 0, 0)
+  }
+
+  const top = topDims.value
+  const h   = found ? Math.min(found.dimA, found.dimB) : Math.max(3, Math.round(Math.min(top.dimA, top.dimB) / 3))
+
+  const l = top.dimA, w = top.dimB
+  res.value = {
+    length: l,
+    width:  w,
+    height: h,
+    weight: Math.max(0.1, Math.round(l * w * h * 0.00030 * 10) / 10),
+    shape:  top.shape,
+  }
+
+  frozen.value = false
+  busy.value   = false
+  phase.value  = 'result'
+}
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+function guessShape({ dimA, dimB, solidity }) {
+  if (dimA < 3 || dimB < 3) return 'envelope'
+  if (solidity < 0.58) return 'bag'
+  const r = Math.max(dimA, dimB) / Math.min(dimA, dimB)
+  if (r < 1.25 && solidity > 0.78) return 'cylinder'
+  return 'box'
+}
+
+function normToStyle(norm) {
   const vp = viewportRef.value
   if (!vp) return null
-  const cW = vp.clientWidth
-  const cH = vp.clientHeight
+  const cW = vp.clientWidth, cH = vp.clientHeight
   const gs = Math.min(cW, cH) * GUIDE_FRAC
   const gx = (cW - gs) / 2
   const gy = (cH - gs) / 2
-
   return {
     left:   (gx + norm.x * gs) + 'px',
     top:    (gy + norm.y * gs) + 'px',
@@ -693,115 +552,89 @@ function canvasBboxToStyle(norm) {
   }
 }
 
-// ─── math helpers ─────────────────────────────────────────────────────────────
 function bboxIoU(a, b) {
-  const ax2 = a[0] + a[2], ay2 = a[1] + a[3]
-  const bx2 = b[0] + b[2], by2 = b[1] + b[3]
-  const ix1 = Math.max(a[0], b[0]), iy1 = Math.max(a[1], b[1])
-  const ix2 = Math.min(ax2, bx2),   iy2 = Math.min(ay2, by2)
+  const ax2 = a[0]+a[2], ay2 = a[1]+a[3]
+  const bx2 = b[0]+b[2], by2 = b[1]+b[3]
+  const ix1 = Math.max(a[0],b[0]), iy1 = Math.max(a[1],b[1])
+  const ix2 = Math.min(ax2,bx2),   iy2 = Math.min(ay2,by2)
   if (ix2 <= ix1 || iy2 <= iy1) return 0
-  const inter = (ix2 - ix1) * (iy2 - iy1)
-  const union  = a[2] * a[3] + b[2] * b[3] - inter
-  return inter / union
+  const inter = (ix2-ix1)*(iy2-iy1)
+  return inter / (a[2]*a[3] + b[2]*b[3] - inter)
 }
 
-function guessShapeFromDims(a, b, solidity) {
-  if (a < 3 || b < 3) return 'envelope'
-  if (solidity < 0.60) return 'bag'
-  const ratio = Math.max(a, b) / Math.min(a, b)
-  if (ratio < 1.3 && solidity > 0.78) return 'cylinder' // roughly square + high fill
-  return 'box'
-}
-
-function estimateWeight(l, w, h) {
-  // Volume × 0.30 g/cm³ (medium-density goods) → kg
-  return Math.max(0.1, Math.round((l * w * h * 0.00030) * 10) / 10)
-}
-
-// ─── UX helpers ───────────────────────────────────────────────────────────────
-function triggerFlash() {
-  showFlash.value = true
-  setTimeout(() => { showFlash.value = false }, 220)
+function doFlash() {
+  flash.value = true
+  setTimeout(() => { flash.value = false }, 230)
 }
 
 function restart() {
-  stopDetectionLoop()
-  bboxStyle.value    = null
-  detectedLabel.value = ''
-  topDims.value      = null
-  result.value       = { length: 0, width: 0, height: 0, weight: 0, shape: 'box' }
-  phase.value        = 'top'
-  autoCaptureFired   = false
-  startDetectionLoop()
+  stopLoop()
+  bboxStyle.value = null
+  detConf.value   = 0
+  topDims.value   = null
+  autoFired       = false
+  res.value       = { length: 0, width: 0, height: 0, weight: 0, shape: 'box' }
+  phase.value     = 'top'
+  startLoop()
 }
 
 function confirm() {
-  stopCamera()
-  emit('confirm', { ...result.value })
+  emit('confirm', { ...res.value })
+  handleClose()
 }
 
 function handleClose() {
-  stopCamera()
+  stopLoop()
+  stopStream()
   emit('close')
 }
 
-function stopCamera() {
-  stopDetectionLoop()
-  stream?.getTracks().forEach(t => t.stop())
-  stream = null
+function stopStream() {
+  mediaStream?.getTracks().forEach(t => t.stop())
+  mediaStream = null
 }
 
-// ─── lifecycle ────────────────────────────────────────────────────────────────
-onMounted(initScanner)
-onUnmounted(stopCamera)
+onMounted(init)
+onUnmounted(() => { stopLoop(); stopStream() })
 </script>
 
 <style scoped>
-/* ── Shell ── */
 .ps {
   position: fixed; inset: 0; z-index: 9999;
-  background: rgba(0, 0, 0, 0.9);
+  background: rgba(0,0,0,0.88);
   display: flex; align-items: flex-end; justify-content: center;
   font-family: 'Montserrat', sans-serif;
 }
 .ps-sheet {
   width: 100%; max-width: 540px;
-  background: #0d0d0d;
-  border-radius: 24px 24px 0 0;
+  background: #0e0e0e;
+  border-radius: 22px 22px 0 0;
   display: flex; flex-direction: column;
   max-height: 97dvh; overflow: hidden;
 }
 
-/* ── Header ── */
+/* Header */
 .ps-hdr {
   display: flex; align-items: center; gap: 10px;
   padding: 14px 16px 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
   flex-shrink: 0;
 }
 .ps-hdr-close {
   width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.07); border: none; border-radius: 50%;
+  background: rgba(255,255,255,0.08); border: none; border-radius: 50%;
   color: rgba(255,255,255,0.7); cursor: pointer; flex-shrink: 0;
-  transition: background 0.15s;
 }
-.ps-hdr-close:hover { background: rgba(255,255,255,0.14); }
-.ps-hdr-center {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
-}
-.ps-hdr-title {
-  font-size: 13px; font-weight: 800; color: #fff; letter-spacing: 0.01em;
-}
-.ps-step-dots { display: flex; gap: 6px; }
-.ps-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: rgba(255,255,255,0.18); transition: background 0.25s;
-}
-.ps-dot.active { background: #e8dfa0; }
-.ps-dot.done   { background: #22c55e; }
+.ps-hdr-close:hover { background: rgba(255,255,255,0.15); }
+.ps-hdr-center { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ps-hdr-title  { font-size: 13px; font-weight: 800; color: #fff; }
+.ps-dots { display: flex; gap: 6px; }
+.ps-dot  { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.18); transition: background 0.2s; }
+.ps-dot.on   { background: #e8dfa0; }
+.ps-dot.done { background: #22c55e; }
 
-/* ── Viewport ── */
+/* Viewport */
 .ps-viewport {
   position: relative;
   width: 100%;
@@ -811,260 +644,218 @@ onUnmounted(stopCamera)
   flex-shrink: 0;
 }
 
-/* ── States ── */
-.ps-state-overlay {
+/* Loading / error overlay */
+.ps-overlay-state {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 10px; padding: 24px;
+  gap: 12px; padding: 28px;
 }
 .ps-state-title {
   font-size: 14px; font-weight: 800; color: #fff; text-align: center; margin: 0;
 }
 .ps-state-sub {
-  font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.45);
-  text-align: center; line-height: 1.5; margin: 0;
+  font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.4);
+  text-align: center; line-height: 1.55; margin: 0; max-width: 280px;
 }
-.ps-loading-ring {
-  width: 44px; height: 44px;
-  border: 3.5px solid rgba(255,255,255,0.12);
+.ps-ring {
+  width: 42px; height: 42px;
+  border: 3px solid rgba(255,255,255,0.1);
   border-top-color: #e8dfa0;
   border-radius: 50%;
-  animation: ps-spin 0.8s linear infinite;
+  animation: ps-spin 0.85s linear infinite;
 }
-.ps-load-bar {
-  width: 160px; height: 3px;
-  background: rgba(255,255,255,0.1);
-  border-radius: 99px; overflow: hidden; margin-top: 8px;
+.ps-loadbar {
+  width: 180px; height: 3px;
+  background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden;
 }
-.ps-load-fill {
+.ps-loadbar-fill {
   height: 100%; background: #e8dfa0; border-radius: 99px;
-  transition: width 0.4s ease;
+  transition: width 0.35s ease;
 }
-.ps-btn-retry-sm {
-  margin-top: 8px;
+.ps-overlay-err { }
+.ps-btn-sm {
   background: rgba(255,255,255,0.1); border: 1.5px solid rgba(255,255,255,0.2);
-  border-radius: 8px; padding: 8px 18px;
+  border-radius: 8px; padding: 9px 20px; margin-top: 4px;
   font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 700;
-  color: #fff; cursor: pointer; transition: background 0.15s;
+  color: #fff; cursor: pointer;
 }
-.ps-btn-retry-sm:hover { background: rgba(255,255,255,0.18); }
+.ps-btn-sm:hover { background: rgba(255,255,255,0.18); }
 
-/* ── Camera video ── */
+/* Camera */
 .ps-video {
   width: 100%; height: 100%; object-fit: cover; display: block;
 }
-.ps-video--frozen { filter: brightness(0.85); }
-.ps-hidden-canvas { display: none; }
+.ps-frozen { filter: brightness(0.82); }
+.ps-hidden { display: none; }
 
-/* ── Guide overlay ── */
+/* Guide overlay */
 .ps-guide {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;
 }
-.ps-guide-corners {
+.ps-corners {
   width: 76%; aspect-ratio: 1/1;
-  color: rgba(232,223,160,0.85);
-  transition: color 0.25s;
-  filter: drop-shadow(0 0 6px rgba(232,223,160,0.35));
+  color: rgba(232,223,160,0.9);
+  filter: drop-shadow(0 0 8px rgba(232,223,160,0.4));
+  transition: color 0.2s, filter 0.2s;
 }
-.ps-guide--hit .ps-guide-corners { color: #22c55e; }
-
+.ps-guide-hit .ps-corners {
+  color: #22c55e;
+  filter: drop-shadow(0 0 10px rgba(34,197,94,0.5));
+}
 .ps-scanline {
-  position: absolute;
-  left: 12%; right: 12%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 0%, #e8dfa0 30%, #e8dfa0 70%, transparent 100%);
-  animation: ps-scan 2.4s ease-in-out infinite;
-  pointer-events: none;
+  position: absolute; left: 12%; right: 12%; height: 2px;
+  background: linear-gradient(90deg, transparent, #e8dfa0 35%, #e8dfa0 65%, transparent);
+  animation: ps-scan 2.2s ease-in-out infinite;
 }
 @keyframes ps-scan {
   0%,100% { top: 12%; opacity: 0.3; }
   50%      { top: 84%; opacity: 1;   }
 }
-
-.ps-phase-badge {
+.ps-phase-tag {
   position: absolute; bottom: 10px;
-  background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(0,0,0,0.65); border: 1px solid rgba(255,255,255,0.14);
   border-radius: 99px; padding: 4px 12px;
   font-size: 9px; font-weight: 900; letter-spacing: 0.16em; color: #e8dfa0;
 }
 
-/* ── Bounding box overlay ── */
+/* Bounding box */
 .ps-bbox {
   position: absolute;
-  border: 2px solid rgba(232,223,160,0.8);
-  border-radius: 6px;
-  box-shadow: 0 0 0 1px rgba(232,223,160,0.2), inset 0 0 12px rgba(232,223,160,0.05);
+  border: 2px solid rgba(232,223,160,0.85);
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px rgba(232,223,160,0.2);
   pointer-events: none;
-  transition: left 0.12s, top 0.12s, width 0.12s, height 0.12s;
+  transition: left 0.1s, top 0.1s, width 0.1s, height 0.1s;
 }
-.ps-bbox--stable {
+.ps-bbox-stable {
   border-color: #22c55e;
-  box-shadow: 0 0 0 1px rgba(34,197,94,0.25), inset 0 0 12px rgba(34,197,94,0.08);
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.25);
 }
-.ps-bbox-label {
-  position: absolute; top: -22px; left: 0;
-  background: rgba(0,0,0,0.7); border-radius: 4px; padding: 2px 8px;
-  font-size: 10px; font-weight: 800; color: #e8dfa0; letter-spacing: 0.06em;
-  text-transform: capitalize; white-space: nowrap;
+.ps-arc {
+  position: absolute; bottom: -26px; right: -26px;
+  width: 44px; height: 44px; pointer-events: none;
 }
-.ps-stab-ring {
-  position: absolute; bottom: -20px; right: -20px;
-  width: 40px; height: 40px;
-}
-
-.ps-autocapture-toast {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-  background: rgba(0,0,0,0.75); border: 1.5px solid #22c55e;
-  border-radius: 99px; padding: 6px 14px;
-  font-size: 12px; font-weight: 800; color: #22c55e;
-  white-space: nowrap; letter-spacing: 0.02em;
-  animation: ps-fade-in 0.2s ease;
+.ps-auto-badge {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.75); border: 1.5px solid #22c55e; border-radius: 99px;
+  padding: 5px 14px; font-size: 12px; font-weight: 800; color: #22c55e;
+  white-space: nowrap; animation: ps-fadein 0.2s ease;
 }
 
-/* ── Flash ── */
+/* Flash */
 .ps-flash {
-  position: absolute; inset: 0;
-  background: rgba(255,255,255,0.65);
-  animation: ps-flash 0.22s ease-out forwards;
-  pointer-events: none;
+  position: absolute; inset: 0; background: rgba(255,255,255,0.7);
+  animation: ps-flash 0.22s ease-out forwards; pointer-events: none;
 }
-@keyframes ps-flash {
-  0%   { opacity: 1; }
-  100% { opacity: 0; }
-}
+@keyframes ps-flash { 0% { opacity: 1; } 100% { opacity: 0; } }
 
-/* ── Result canvas ── */
-.ps-result-canvas {
-  width: 100%; height: 100%; object-fit: cover; display: block;
-}
+/* Result canvas */
+.ps-result-canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ps-result-badge {
-  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 8px;
-  background: rgba(0,0,0,0.78); border: 1.5px solid #22c55e;
-  border-radius: 99px; padding: 7px 16px;
-  font-size: 12px; font-weight: 800; color: #22c55e; white-space: nowrap;
+  background: rgba(0,0,0,0.78); border: 1.5px solid #22c55e; border-radius: 99px;
+  padding: 6px 16px; font-size: 12px; font-weight: 800; color: #22c55e; white-space: nowrap;
 }
 
-/* ── Bottom panel ── */
+/* Panel */
 .ps-panel {
-  padding: 14px 16px max(20px, env(safe-area-inset-bottom, 20px));
-  background: #0d0d0d;
+  padding: 12px 16px max(18px, env(safe-area-inset-bottom, 18px));
+  background: #0e0e0e;
   display: flex; flex-direction: column; gap: 10px;
   flex-shrink: 0;
 }
 .ps-hint {
-  font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.45);
+  font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.42);
   line-height: 1.5; text-align: center; margin: 0;
 }
 
-/* Detection strip */
-.ps-det-strip {
-  display: flex; align-items: center; gap: 8px; justify-content: center;
+/* Detection bar */
+.ps-conf-row {
+  display: flex; align-items: center; gap: 8px;
 }
-.ps-det-label {
-  font-size: 11px; font-weight: 800; color: #e8dfa0; text-transform: capitalize;
-}
-.ps-det-conf { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.38); }
-.ps-det-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: rgba(255,255,255,0.2); transition: background 0.3s;
-  margin-left: 2px;
-}
-.ps-det-dot.active { background: #22c55e; }
+.ps-conf-label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.45); white-space: nowrap; }
+.ps-conf-bar   { flex: 1; height: 4px; background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden; }
+.ps-conf-fill  { height: 100%; border-radius: 99px; transition: width 0.2s, background 0.2s; }
+.ps-conf-pct   { font-size: 10px; font-weight: 800; color: rgba(255,255,255,0.5); min-width: 28px; text-align: right; }
+.ps-no-det     { font-size: 10px; font-weight: 600; color: rgba(255,165,0,0.7); text-align: center; margin: 0; }
 
 /* Capture button */
 .ps-btn-capture {
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  background: #e8dfa0; color: #111;
-  border: none; border-radius: 14px; padding: 16px;
+  background: #e8dfa0; color: #111; border: none; border-radius: 14px; padding: 15px;
   font-family: 'Montserrat', sans-serif; font-size: 14px; font-weight: 900;
-  cursor: pointer; letter-spacing: 0.02em;
-  transition: background 0.15s, opacity 0.15s;
+  cursor: pointer; transition: background 0.15s, opacity 0.15s;
 }
 .ps-btn-capture:hover:not(:disabled) { background: #fff; }
 .ps-btn-capture:disabled { opacity: 0.45; cursor: not-allowed; }
 .ps-spinner {
   width: 18px; height: 18px;
-  border: 2.5px solid rgba(17,17,17,0.25);
-  border-top-color: #111;
-  border-radius: 50%;
-  animation: ps-spin 0.7s linear infinite;
+  border: 2.5px solid rgba(17,17,17,0.2); border-top-color: #111;
+  border-radius: 50%; animation: ps-spin 0.7s linear infinite;
 }
 
 /* Dims grid */
-.ps-dims-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-}
+.ps-dims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .ps-dim-cell { display: flex; flex-direction: column; gap: 4px; }
-.ps-dim-lbl {
+.ps-dim-cell label {
   font-size: 9px; font-weight: 800; letter-spacing: 0.12em;
-  text-transform: uppercase; color: rgba(255,255,255,0.35);
+  text-transform: uppercase; color: rgba(255,255,255,0.32);
 }
 .ps-dim-row {
   display: flex; align-items: center; gap: 6px;
-  background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.1);
-  border-radius: 10px; padding: 9px 12px;
+  background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: 10px; padding: 9px 11px;
 }
-.ps-dim-input {
+.ps-dim-in {
   flex: 1; min-width: 0; background: none; border: none; outline: none;
-  font-family: 'Montserrat', sans-serif; font-size: 18px; font-weight: 900;
-  color: #e8dfa0;
+  font-family: 'Montserrat', sans-serif; font-size: 18px; font-weight: 900; color: #e8dfa0;
 }
-.ps-dim-input::-webkit-outer-spin-button,
-.ps-dim-input::-webkit-inner-spin-button { -webkit-appearance: none; }
-.ps-dim-unit {
-  font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.35);
-}
+.ps-dim-in::-webkit-outer-spin-button,
+.ps-dim-in::-webkit-inner-spin-button { -webkit-appearance: none; }
+.ps-dim-unit { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.3); }
 
 /* Shape chips */
-.ps-shape-row {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
+.ps-shape-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ps-shape-lbl {
   font-size: 9px; font-weight: 800; letter-spacing: 0.12em;
-  text-transform: uppercase; color: rgba(255,255,255,0.35);
-  white-space: nowrap; flex-shrink: 0;
+  text-transform: uppercase; color: rgba(255,255,255,0.32); white-space: nowrap;
 }
-.ps-shape-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.ps-shape-chip {
+.ps-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.ps-chip {
   background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.1);
-  border-radius: 99px; padding: 5px 12px;
+  border-radius: 99px; padding: 5px 11px;
   font-family: 'Montserrat', sans-serif; font-size: 11px; font-weight: 700;
-  color: rgba(255,255,255,0.5); cursor: pointer;
-  transition: all 0.15s; white-space: nowrap;
+  color: rgba(255,255,255,0.48); cursor: pointer; transition: all 0.15s; white-space: nowrap;
 }
-.ps-shape-chip.on {
-  background: rgba(232,223,160,0.12); border-color: #e8dfa0; color: #e8dfa0;
-}
+.ps-chip.on { background: rgba(232,223,160,0.14); border-color: #e8dfa0; color: #e8dfa0; }
 
-/* Result actions */
-.ps-result-actions { display: flex; gap: 10px; }
+/* Actions */
+.ps-actions { display: flex; gap: 10px; }
 .ps-btn-retake {
   display: flex; align-items: center; gap: 6px; white-space: nowrap;
   background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.1);
-  border-radius: 12px; padding: 13px 16px;
+  border-radius: 12px; padding: 13px 15px;
   font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 700;
   color: rgba(255,255,255,0.55); cursor: pointer; transition: background 0.15s;
 }
 .ps-btn-retake:hover { background: rgba(255,255,255,0.1); }
 .ps-btn-confirm {
-  flex: 1; background: #2230a0; color: #e8dfa0;
-  border: none; border-radius: 12px; padding: 14px;
+  flex: 1; background: #2230a0; color: #e8dfa0; border: none;
+  border-radius: 12px; padding: 14px;
   font-family: 'Montserrat', sans-serif; font-size: 14px; font-weight: 900;
   cursor: pointer; transition: background 0.15s;
 }
 .ps-btn-confirm:hover { background: #1a258a; }
 
-/* ── Animations ── */
 @keyframes ps-spin    { to { transform: rotate(360deg); } }
-@keyframes ps-fade-in { from { opacity: 0; transform: translateX(-50%) translateY(-4px); } }
+@keyframes ps-fadein  { from { opacity: 0; transform: translateX(-50%) translateY(-4px); } }
 
-/* ── Responsive ── */
 @media (min-width: 540px) {
   .ps { align-items: center; }
-  .ps-sheet { border-radius: 24px; max-height: 92dvh; }
+  .ps-sheet { border-radius: 22px; max-height: 92dvh; }
 }
 </style>
