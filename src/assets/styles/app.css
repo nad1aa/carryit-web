@@ -1,0 +1,248 @@
+/* ============================================================
+   CarryIt App Design System — Sketch Palette
+   Used by all app screens (auth, sender, traveler, delivery)
+   ============================================================ */
+
+/* ---- Design Tokens ---- */
+:root {
+  --ci-bg:           #f0f0ee;
+  --ci-paper:        #e8dfa0;
+  --ci-ink:          #111111;
+  --ci-ink-soft:     #555555;
+  --ci-ink-faint:    rgba(17,17,17,0.38);
+  --ci-blue:         #2230a0;
+  --ci-blue-mid:     #3a4db8;
+  --ci-blue-light:   #d4d8f8;
+  --ci-purple:       #8485d0;
+  --ci-green:        #3b6d11;
+  --ci-green-light:  #d1f4d1;
+  --ci-green-text:   #2d5a2d;
+  --ci-red:          #b0392e;
+  --ci-red-light:    #fde8e8;
+  --ci-amber:        #854f0b;
+  --ci-amber-light:  #fef3c7;
+  --ci-white:        #ffffff;
+  --ci-border:       rgba(17,17,17,0.14);
+  --ci-border-mid:   rgba(17,17,17,0.28);
+  --ci-font:         'Montserrat', sans-serif;
+  --ci-radius:       14px;
+  --ci-radius-sm:    8px;
+  --ci-radius-lg:    22px;
+  --ci-shadow:       0 4px 24px rgba(17,17,17,0.10);
+  --ci-shadow-card:  0 2px 12px rgba(17,17,17,0.08);
+}
+
+/* ---- Vuetify v-main layout fix ---- */
+/* v-main defaults to display:flex (row), which collapses page width.
+   Column direction makes children stretch to full width automatically. */
+.v-main {
+  flex-direction: column !important;
+}
+.v-main > * {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ---- Base resets for app screens ---- */
+.ci-app {
+  font-family: var(--ci-font);
+  background: var(--ci-bg);
+  color: var(--ci-ink);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- App Header (dark bar) ---- */
+.ci-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--ci-ink);
+  color: var(--ci-white);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  height: 58px;
+  border-bottom: 2px solid rgba(255,255,255,0.06);
+}
+.ci-header-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.ci-header-back:hover { background: rgba(255,255,255,0.16); }
+.ci-header-title {
+  flex: 1;
+  font-family: var(--ci-font);
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+.ci-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- Cards ---- */
+.ci-card {
+  background: #fff;
+  border: 1.5px solid var(--ci-border);
+  border-radius: var(--ci-radius);
+  box-shadow: var(--ci-shadow-card);
+}
+
+/* ---- Inputs ---- */
+.ci-input {
+  display: block;
+  width: 100%;
+  background: #fff;
+  border: 1.5px solid var(--ci-border-mid);
+  border-radius: var(--ci-radius-sm);
+  padding: 13px 16px;
+  font-family: var(--ci-font);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ci-ink);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.ci-input:focus { border-color: var(--ci-blue); }
+.ci-input::placeholder { color: var(--ci-ink-faint); }
+
+.ci-label {
+  display: block;
+  font-family: var(--ci-font);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ci-ink-soft);
+  margin-bottom: 6px;
+}
+
+/* ---- Buttons ---- */
+.ci-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--ci-font);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  border: 2px solid transparent;
+  border-radius: var(--ci-radius-sm);
+  padding: 13px 24px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.ci-btn-primary {
+  background: var(--ci-blue);
+  color: #fff;
+  border-color: var(--ci-blue);
+}
+.ci-btn-primary:hover { background: var(--ci-blue-mid); border-color: var(--ci-blue-mid); }
+.ci-btn-secondary {
+  background: transparent;
+  color: var(--ci-ink);
+  border-color: var(--ci-border-mid);
+}
+.ci-btn-secondary:hover { border-color: var(--ci-ink); }
+.ci-btn-ghost {
+  background: transparent;
+  color: var(--ci-ink-soft);
+  border-color: transparent;
+}
+.ci-btn-full { width: 100%; }
+
+/* ---- Progress bar ---- */
+.ci-progress-bar {
+  height: 4px;
+  background: var(--ci-border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.ci-progress-fill {
+  height: 100%;
+  background: var(--ci-blue);
+  border-radius: 99px;
+  transition: width 0.4s cubic-bezier(.4,0,.2,1);
+}
+
+/* ---- Status pills ---- */
+.ci-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-family: var(--ci-font);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ci-pill-blue   { background: var(--ci-blue-light); color: var(--ci-blue); }
+.ci-pill-green  { background: var(--ci-green-light); color: var(--ci-green-text); }
+.ci-pill-red    { background: var(--ci-red-light); color: var(--ci-red); }
+.ci-pill-amber  { background: var(--ci-amber-light); color: var(--ci-amber); }
+.ci-pill-dark   { background: var(--ci-ink); color: #fff; }
+
+/* ---- Bottom tab bar ---- */
+.ci-tab-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 200;
+  background: var(--ci-ink);
+  display: flex;
+  align-items: stretch;
+  height: 64px;
+  border-top: 2px solid rgba(255,255,255,0.06);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.ci-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(255,255,255,0.42);
+  font-family: var(--ci-font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: color 0.15s;
+  padding: 0 4px;
+}
+.ci-tab.active, .ci-tab:hover { color: #fff; }
+.ci-tab svg { width: 22px; height: 22px; flex-shrink: 0; }
+
+/* ---- Dividers ---- */
+.ci-divider {
+  border: none;
+  border-top: 1.5px dashed var(--ci-border);
+  margin: 0;
+}
+
+/* ---- Utility ---- */
+.ci-mt-auto { margin-top: auto; }
+.ci-text-center { text-align: center; }

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx vite *)",
+      "Bash(ls dist/)",
+      "Bash(netstat -ano)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}
