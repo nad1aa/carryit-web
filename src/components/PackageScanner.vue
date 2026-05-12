@@ -2,145 +2,161 @@
   <teleport to="body">
     <div class="ps" role="dialog" aria-modal="true">
       <div class="ps-shell">
-        <header class="ps-header">
-          <button class="ps-close" type="button" @click="handleClose" aria-label="Close">×</button>
+        <header class="ps-topbar">
+          <button class="ps-icon-btn" type="button" aria-label="Close" @click="handleClose">
+            <span aria-hidden="true">x</span>
+          </button>
 
-          <div class="ps-title-wrap">
-            <span class="ps-kicker">{{ phaseLabel }}</span>
-            <strong>{{ TITLES[phase] }}</strong>
+          <div class="ps-title">
+            <span>{{ phaseEyebrow }}</span>
+            <strong>{{ phaseTitle }}</strong>
           </div>
 
-          <div class="ps-step">
-            <span
-              v-for="i in 4"
-              :key="i"
-              :class="{ on: stepIndex >= i, done: stepIndex > i }"
-            />
+          <div class="ps-steps" aria-hidden="true">
+            <i v-for="i in 3" :key="i" :class="{ on: step >= i, done: step > i }" />
           </div>
         </header>
 
-        <main class="ps-view" ref="viewportRef">
-          <template v-if="phase === 'loading'">
-            <div class="ps-state">
-              <div class="ps-orbit"><i /></div>
-              <strong>{{ loadMsg }}</strong>
-              <span>Keep the item, card, and surface well lit.</span>
-            </div>
-          </template>
+        <main ref="viewportRef" class="ps-view">
+          <div v-if="phase === 'loading'" class="ps-state">
+            <div class="ps-loader"><i /></div>
+            <strong>Starting camera</strong>
+            <span>Preparing real-time scan tracking.</span>
+          </div>
 
-          <template v-else-if="phase === 'error'">
-            <div class="ps-state">
-              <div class="ps-error">!</div>
-              <strong>{{ errTitle }}</strong>
-              <span>{{ errSub }}</span>
-              <button class="ps-soft-btn" type="button" @click="init">Try again</button>
-            </div>
-          </template>
+          <div v-else-if="phase === 'error'" class="ps-state">
+            <div class="ps-error">!</div>
+            <strong>{{ errTitle }}</strong>
+            <span>{{ errSub }}</span>
+            <button class="ps-soft" type="button" @click="init">Try again</button>
+          </div>
 
-          <template v-else-if="isCameraPhase">
+          <template v-else-if="isLive">
             <video ref="videoRef" class="ps-video" autoplay playsinline muted :class="{ frozen }" />
             <canvas ref="workRef" class="ps-hidden" />
 
-            <div class="ps-vignette" />
+            <div class="ps-depth-grid" aria-hidden="true" />
+            <div class="ps-vignette" aria-hidden="true" />
 
-            <div class="ps-guide" :class="{ ready: readyToCapture }">
-              <div class="ps-card-ghost" v-if="phase === 'calibrate'">
-                <span>Credit card</span>
-              </div>
-
-              <svg class="ps-corners" viewBox="0 0 200 200" fill="none">
-                <path d="M10 48 L10 10 L48 10" />
-                <path d="M152 10 L190 10 L190 48" />
-                <path d="M10 152 L10 190 L48 190" />
-                <path d="M152 190 L190 190 L190 152" />
+            <div class="ps-guide" :class="{ locked: lockState === 'locked' }" aria-hidden="true">
+              <svg viewBox="0 0 240 240">
+                <path d="M18 64V18h46" />
+                <path d="M176 18h46v46" />
+                <path d="M18 176v46h46" />
+                <path d="M176 222h46v-46" />
               </svg>
-
-              <div v-if="!bboxStyle" class="ps-scanline" />
+              <div v-if="!boxStyle" class="ps-scanline" />
+              <div class="ps-pulse" />
             </div>
 
             <div
-              v-if="bboxStyle && !frozen"
+              v-if="boxStyle"
               class="ps-box"
-              :class="{ ready: readyToCapture }"
-              :style="bboxStyle"
+              :class="{ locked: lockState === 'locked' }"
+              :style="boxStyle"
+              aria-hidden="true"
             >
-              <svg class="ps-progress" viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18" />
-                <circle cx="22" cy="22" r="18" :style="progressRingStyle" />
+              <span class="ps-box-corner tl" />
+              <span class="ps-box-corner tr" />
+              <span class="ps-box-corner bl" />
+              <span class="ps-box-corner br" />
+              <svg class="ps-ring" viewBox="0 0 48 48">
+                <circle cx="24" cy="24" r="19" />
+                <circle cx="24" cy="24" r="19" :style="ringStyle" />
               </svg>
             </div>
 
-            <div class="ps-live-pill" :class="{ good: readyToCapture }">
-              <span>{{ scanMessage }}</span>
-              <strong>{{ confidence }}%</strong>
+            <div class="ps-hud" :class="{ locked: lockState === 'locked' }">
+              <div>
+                <span>{{ liveStatus }}</span>
+                <strong>{{ confidence }}%</strong>
+              </div>
+              <b>{{ liveMetric }}</b>
             </div>
 
             <div v-if="flash" class="ps-flash" />
           </template>
 
           <template v-else-if="phase === 'result'">
-            <img v-if="sidePreview" class="ps-result-img" :src="sidePreview" alt="" />
-            <div class="ps-result-shade" />
-            <div class="ps-result-mark">Scan complete</div>
+            <img v-if="sidePreview || topPreview" class="ps-result-img" :src="sidePreview || topPreview" alt="" />
+            <div class="ps-vignette" />
+            <div class="ps-result-chip">Scan complete</div>
           </template>
         </main>
 
         <section class="ps-panel">
-          <p class="ps-hint">{{ HINTS[phase] }}</p>
+          <p class="ps-hint">{{ phaseHint }}</p>
 
-          <template v-if="isCameraPhase">
-            <div class="ps-calibration" v-if="pxPerCm">
-              <span>Scale locked</span>
-              <strong>{{ pxPerCm.toFixed(1) }} px/cm</strong>
+          <template v-if="isLive">
+            <div class="ps-confidence">
+              <span :style="{ width: confidence + '%' }" :class="{ locked: lockState === 'locked' }" />
             </div>
 
-            <div class="ps-meter">
-              <div :style="{ width: confidence + '%' }" :class="{ good: readyToCapture }" />
+            <div class="ps-readout">
+              <div>
+                <span>Tracking</span>
+                <strong>{{ lockState === 'locked' ? 'Locked' : 'Live' }}</strong>
+              </div>
+              <div>
+                <span>Scale</span>
+                <strong>{{ scaleLabel }}</strong>
+              </div>
+              <div>
+                <span>Mode</span>
+                <strong>{{ phase === 'top' ? 'Top' : 'Side' }}</strong>
+              </div>
             </div>
 
-            <button class="ps-main-btn" type="button" :disabled="busy" @click="captureCurrent">
+            <button class="ps-primary" type="button" :disabled="busy" @click="captureCurrent">
               <span v-if="busy" class="ps-spinner" />
-              <span v-else>{{ captureLabel }}</span>
+              <span v-else>{{ phase === 'top' ? 'Capture top scan' : 'Capture side scan' }}</span>
             </button>
           </template>
 
           <template v-if="phase === 'result'">
             <div class="ps-previews">
-              <div>
+              <figure>
                 <img v-if="topPreview" :src="topPreview" alt="" />
-                <span>Top</span>
-              </div>
-              <div>
+                <figcaption>Top</figcaption>
+              </figure>
+              <figure>
                 <img v-if="sidePreview" :src="sidePreview" alt="" />
-                <span>Side</span>
-              </div>
+                <figcaption>Side</figcaption>
+              </figure>
             </div>
 
             <div class="ps-dims">
-              <label v-for="f in FIELDS" :key="f.key">
-                <span>{{ f.lbl }}</span>
+              <label v-for="field in FIELDS" :key="field.key">
+                <span>{{ field.label }}</span>
                 <div>
-                  <input v-model.number="res[f.key]" type="number" :min="f.min" :max="f.max" :step="f.step" />
-                  <em>{{ f.unit }}</em>
+                  <input
+                    v-model.number="res[field.key]"
+                    type="number"
+                    :min="field.min"
+                    :max="field.max"
+                    :step="field.step"
+                    inputmode="decimal"
+                  />
+                  <em>{{ field.unit }}</em>
                 </div>
               </label>
             </div>
 
-            <div class="ps-shapes">
+            <div class="ps-chips">
               <button
-                v-for="s in SHAPES"
-                :key="s.id"
+                v-for="shape in SHAPES"
+                :key="shape.id"
                 type="button"
-                :class="{ on: res.shape === s.id }"
-                @click="res.shape = s.id"
+                :class="{ on: res.shape === shape.id }"
+                @click="res.shape = shape.id"
               >
-                {{ s.label }}
+                {{ shape.label }}
               </button>
             </div>
 
             <div class="ps-actions">
-              <button class="ps-soft-btn" type="button" @click="retakeItem">Retake item</button>
-              <button class="ps-main-btn" type="button" @click="confirm">Use this scan</button>
+              <button class="ps-soft" type="button" @click="retake">Retake</button>
+              <button class="ps-primary" type="button" @click="confirm">Use scan</button>
             </div>
           </template>
         </section>
@@ -154,50 +170,34 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 const emit = defineEmits(['close', 'confirm'])
 
-const CONFIG = {
-  cardWidthCm: 8.56,
-  cardHeightCm: 5.398,
+const PROFILE = {
   guideRatio: 0.76,
-  detectMs: 140,
-  stableFrames: 8,
-  stableIou: 0.74,
-  autoMs: 1050,
-  minContrast: 24,
-  minEdge: 42,
-  minHits: 260,
-  smoothing: 0.34,
-}
-
-const TITLES = {
-  loading: 'Starting camera',
-  error: 'Camera issue',
-  calibrate: 'Calibrate with a card',
-  top: 'Scan top view',
-  side: 'Scan side view',
-  result: 'Review dimensions',
-}
-
-const HINTS = {
-  loading: 'Allow camera access when prompted.',
-  error: 'Camera could not start.',
-  calibrate: 'Place a credit card flat inside the frame. Use a plain surface and avoid glare.',
-  top: 'Remove the card. Place the item flat and keep the same camera distance.',
-  side: 'Turn the item sideways. Keep the same camera distance used for the top scan.',
-  result: 'These are estimates from your card scale. Adjust anything before confirming.',
+  processSize: 300,
+  targetFps: 24,
+  lockMs: 260,
+  autoMs: 620,
+  unlockJitter: 0.14,
+  minArea: 0.006,
+  maxArea: 0.9,
+  creditCardRatio: 1.586,
+  creditCardWidthCm: 8.56,
+  creditCardHeightCm: 5.398,
+  topGuideCm: 34,
+  sideGuideCm: 24,
 }
 
 const FIELDS = [
-  { key: 'length', lbl: 'Length', unit: 'cm', min: 1, max: 300, step: 1 },
-  { key: 'width', lbl: 'Width', unit: 'cm', min: 1, max: 300, step: 1 },
-  { key: 'height', lbl: 'Height', unit: 'cm', min: 1, max: 300, step: 1 },
-  { key: 'weight', lbl: 'Weight', unit: 'kg', min: 0.1, max: 100, step: 0.1 },
+  { key: 'length', label: 'Length', unit: 'cm', min: 1, max: 300, step: 1 },
+  { key: 'width', label: 'Width', unit: 'cm', min: 1, max: 300, step: 1 },
+  { key: 'height', label: 'Height', unit: 'cm', min: 1, max: 300, step: 1 },
+  { key: 'weight', label: 'Weight', unit: 'kg', min: 0.1, max: 100, step: 0.1 },
 ]
 
 const SHAPES = [
   { id: 'box', label: 'Box' },
   { id: 'cylinder', label: 'Cylinder' },
-  { id: 'bag', label: 'Bag / soft' },
-  { id: 'envelope', label: 'Envelope' },
+  { id: 'bag', label: 'Bag' },
+  { id: 'envelope', label: 'Flat' },
   { id: 'irregular', label: 'Irregular' },
 ]
 
@@ -205,7 +205,6 @@ const phase = ref('loading')
 const busy = ref(false)
 const frozen = ref(false)
 const flash = ref(false)
-const loadMsg = ref('Requesting camera...')
 const errTitle = ref('')
 const errSub = ref('')
 
@@ -213,33 +212,42 @@ const viewportRef = ref(null)
 const videoRef = ref(null)
 const workRef = ref(null)
 
-const bboxStyle = ref(null)
 const confidence = ref(0)
 const stablePct = ref(0)
-const scanMessage = ref('Looking for object...')
-const pxPerCm = ref(null)
+const lockState = ref('searching')
+const liveStatus = ref('Finding object')
+const liveMetric = ref('Real-time')
+const scaleLabel = ref('Auto')
+const boxStyle = ref(null)
 
-const topDims = ref(null)
+const topScan = ref(null)
 const topPreview = ref('')
 const sidePreview = ref('')
 const res = ref({ length: 0, width: 0, height: 0, weight: 0.1, shape: 'box' })
 
-let mediaStream = null
-let detectTimer = null
+let stream = null
+let rafId = 0
+let lastDetectAt = 0
+let lockStartedAt = 0
 let autoTimer = null
-let autoFired = false
-let stableHistory = []
-let lastGood = null
-let lastBox = null
+let smoothed = null
+let locked = null
+let velocity = { x: 0, y: 0, w: 0, h: 0 }
+let samples = []
 let lastFrame = ''
 
-const isCameraPhase = computed(() => ['calibrate', 'top', 'side'].includes(phase.value))
-const stepIndex = computed(() => ({ calibrate: 1, top: 2, side: 3, result: 4 }[phase.value] || 0))
-const phaseLabel = computed(() => phase.value === 'calibrate' ? 'Step 1 of 4' : phase.value === 'top' ? 'Step 2 of 4' : phase.value === 'side' ? 'Step 3 of 4' : phase.value === 'result' ? 'Step 4 of 4' : 'Scanner')
-const readyToCapture = computed(() => stablePct.value >= 100 && confidence.value >= 58)
-const captureLabel = computed(() => phase.value === 'calibrate' ? 'Lock credit card scale' : phase.value === 'top' ? 'Capture top view' : 'Capture side view')
-const progressRingStyle = computed(() => {
-  const c = 2 * Math.PI * 18
+const isLive = computed(() => phase.value === 'top' || phase.value === 'side')
+const step = computed(() => ({ top: 1, side: 2, result: 3 }[phase.value] || 0))
+const phaseEyebrow = computed(() => (phase.value === 'result' ? 'Step 3 of 3' : phase.value === 'side' ? 'Step 2 of 3' : 'Step 1 of 3'))
+const phaseTitle = computed(() => ({ loading: 'Starting camera', error: 'Camera issue', top: 'Instant top scan', side: 'Instant side scan', result: 'Review dimensions' }[phase.value] || 'Scanner'))
+const phaseHint = computed(() => {
+  if (phase.value === 'top') return 'Place the item in frame. Detection locks automatically in under a second.'
+  if (phase.value === 'side') return 'Turn the item sideways and keep roughly the same distance.'
+  if (phase.value === 'result') return 'Demo estimates are editable before confirmation.'
+  return 'Allow camera access to begin.'
+})
+const ringStyle = computed(() => {
+  const c = 2 * Math.PI * 19
   return { strokeDasharray: c, strokeDashoffset: c - (stablePct.value / 100) * c }
 })
 
@@ -250,17 +258,12 @@ onUnmounted(() => {
 })
 
 async function init() {
-  stopLoop()
-  stopStream()
-  resetScan()
-
-  phase.value = 'loading'
-  loadMsg.value = 'Requesting camera...'
-
   try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera is not available in this browser.')
+    phase.value = 'loading'
+    resetLive()
+    stopStream()
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: 'environment' },
         width: { ideal: 1280 },
@@ -269,35 +272,33 @@ async function init() {
       audio: false,
     })
 
-    phase.value = 'calibrate'
+    phase.value = 'top'
     await nextTick()
 
     const video = videoRef.value
-    if (!video) throw new Error('Video element was not created.')
+    if (!video) throw new Error('Video element not available')
 
-    video.srcObject = mediaStream
+    video.srcObject = stream
     video.setAttribute('playsinline', 'true')
-
-    loadMsg.value = 'Starting preview...'
     await video.play()
     await waitForVideo(video)
 
     startLoop()
-  } catch (e) {
-    console.error(e)
+  } catch (error) {
+    console.error(error)
     stopStream()
-    errTitle.value = cameraTitle(e)
-    errSub.value = cameraSub(e)
+    errTitle.value = cameraTitle(error)
+    errSub.value = cameraSub(error)
     phase.value = 'error'
   }
 }
 
 function waitForVideo(video) {
   return new Promise((resolve, reject) => {
-    const started = Date.now()
+    const start = performance.now()
     const tick = () => {
       if (video.videoWidth && video.videoHeight) return resolve()
-      if (Date.now() - started > 6000) return reject(new Error('No camera frames received.'))
+      if (performance.now() - start > 6000) return reject(new Error('No camera frames received'))
       requestAnimationFrame(tick)
     }
     tick()
@@ -306,14 +307,19 @@ function waitForVideo(video) {
 
 function startLoop() {
   stopLoop()
-  detectTimer = window.setInterval(detect, CONFIG.detectMs)
-  detect()
+  const loop = time => {
+    rafId = requestAnimationFrame(loop)
+    if (time - lastDetectAt < 1000 / PROFILE.targetFps) return
+    lastDetectAt = time
+    detect()
+  }
+  rafId = requestAnimationFrame(loop)
 }
 
 function stopLoop() {
-  if (detectTimer) window.clearInterval(detectTimer)
-  if (autoTimer) window.clearTimeout(autoTimer)
-  detectTimer = null
+  if (rafId) cancelAnimationFrame(rafId)
+  if (autoTimer) clearTimeout(autoTimer)
+  rafId = 0
   autoTimer = null
 }
 
@@ -322,82 +328,96 @@ function detect() {
   const canvas = workRef.value
   if (!video || !canvas || frozen.value || video.readyState < 2) return
 
-  const found = analyzeFrame(video, canvas)
-
-  if (!found) {
-    bboxStyle.value = lastBox ? normToStyle(lastBox.norm) : null
-    confidence.value = Math.max(0, confidence.value - 10)
-    stablePct.value = 0
-    stableHistory = []
-    scanMessage.value = phase.value === 'calibrate' ? 'Find the card edges' : 'Find the item edges'
+  const hit = analyze(video, canvas)
+  if (!hit) {
+    confidence.value = Math.max(0, confidence.value - 8)
+    stablePct.value = Math.max(0, stablePct.value - 18)
+    liveStatus.value = 'Searching edges'
+    lockState.value = 'searching'
+    if (!locked) boxStyle.value = smoothed ? toStyle(smoothed.norm) : null
     return
   }
 
-  lastGood = found
-  lastBox = smoothResult(lastBox, found)
-  bboxStyle.value = normToStyle(lastBox.norm)
-  confidence.value = found.confidence
-  scanMessage.value = found.message
-  trackStability(found.rawBbox)
+  smoothed = smooth(smoothed, hit)
+  samples.push(hit)
+  if (samples.length > 10) samples.shift()
+
+  const jitter = smoothed.prev ? boxDelta(smoothed.prev.norm, smoothed.norm) : 1
+  const isStable = jitter < PROFILE.unlockJitter || hit.confidence > 74
+
+  if (isStable) {
+    if (!lockStartedAt) lockStartedAt = performance.now()
+    stablePct.value = Math.min(100, ((performance.now() - lockStartedAt) / PROFILE.lockMs) * 100)
+  } else {
+    lockStartedAt = 0
+    stablePct.value = Math.max(0, stablePct.value - 22)
+    locked = null
+  }
+
+  if (stablePct.value >= 100) {
+    locked = locked ? smooth(locked, smoothed, 0.18) : smoothed
+    lockState.value = 'locked'
+  } else {
+    lockState.value = 'tracking'
+  }
+
+  const display = locked || smoothed
+  boxStyle.value = toStyle(display.norm)
+  confidence.value = hit.confidence
+  liveStatus.value = locked ? 'Object locked' : hit.message
+  liveMetric.value = hit.kind === 'card' ? 'Card-aware' : 'Auto depth'
+  scaleLabel.value = hit.kind === 'card' ? 'Card' : 'Heuristic'
+
+  if (locked && !autoTimer) {
+    autoTimer = setTimeout(() => {
+      autoTimer = null
+      captureCurrent()
+    }, PROFILE.autoMs)
+  }
 }
 
-function analyzeFrame(video, canvas) {
-  const vW = video.videoWidth
-  const vH = video.videoHeight
-  if (!vW || !vH) return null
-
-  canvas.width = vW
-  canvas.height = vH
+function analyze(video, canvas) {
+  const size = PROFILE.processSize
+  canvas.width = size
+  canvas.height = size
 
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  ctx.drawImage(video, 0, 0)
+  const src = cropSquare(video.videoWidth, video.videoHeight)
+  ctx.drawImage(video, src.x, src.y, src.s, src.s, 0, 0, size, size)
   lastFrame = canvas.toDataURL('image/jpeg', 0.86)
 
-  const size = Math.round(Math.min(vW, vH) * CONFIG.guideRatio)
-  const ox = Math.round((vW - size) / 2)
-  const oy = Math.round((vH - size) / 2)
-  const image = ctx.getImageData(ox, oy, size, size)
-  const data = image.data
-  const total = size * size
-  const gray = new Uint8Array(total)
+  const g = ctx.getImageData(0, 0, size, size)
+  const gray = new Uint8Array(size * size)
+  let mean = 0
 
-  let brightness = 0
-  for (let i = 0; i < data.length; i += 4) {
-    const g = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
-    gray[i / 4] = g
-    brightness += g
+  for (let i = 0; i < g.data.length; i += 4) {
+    const value = g.data[i] * 0.299 + g.data[i + 1] * 0.587 + g.data[i + 2] * 0.114
+    gray[i / 4] = value
+    mean += value
   }
-  brightness /= total
 
-  if (brightness < 32) return null
-  if (brightness > 242) return null
+  mean /= gray.length
+  const bg = borderMedian(gray, size)
+  const threshold = clamp(Math.abs(bg - mean) * 0.55 + 18, 22, 52)
 
-  const bg = estimateBackground(gray, size)
   let minX = size
   let minY = size
   let maxX = 0
   let maxY = 0
   let hits = 0
-  let edgeEnergy = 0
+  let edge = 0
 
-  for (let y = 2; y < size - 2; y++) {
-    for (let x = 2; x < size - 2; x++) {
-      const idx = y * size + x
-      const contrast = Math.abs(gray[idx] - bg)
+  const guidePad = Math.round(size * (1 - PROFILE.guideRatio) / 2)
+  for (let y = guidePad + 2; y < size - guidePad - 2; y++) {
+    for (let x = guidePad + 2; x < size - guidePad - 2; x++) {
+      const i = y * size + x
+      const contrast = Math.abs(gray[i] - bg)
+      const gx = -gray[i - size - 1] + gray[i - size + 1] - 2 * gray[i - 1] + 2 * gray[i + 1] - gray[i + size - 1] + gray[i + size + 1]
+      const gy = -gray[i - size - 1] - 2 * gray[i - size] - gray[i - size + 1] + gray[i + size - 1] + 2 * gray[i + size] + gray[i + size + 1]
+      const mag = Math.sqrt(gx * gx + gy * gy)
+      edge += mag
 
-      const gx =
-        -gray[idx - size - 1] + gray[idx - size + 1] -
-        2 * gray[idx - 1] + 2 * gray[idx + 1] -
-        gray[idx + size - 1] + gray[idx + size + 1]
-
-      const gy =
-        -gray[idx - size - 1] - 2 * gray[idx - size] - gray[idx - size + 1] +
-        gray[idx + size - 1] + 2 * gray[idx + size] + gray[idx + size + 1]
-
-      const edge = Math.sqrt(gx * gx + gy * gy)
-      edgeEnergy += edge
-
-      if (contrast > CONFIG.minContrast || edge > CONFIG.minEdge) {
+      if (contrast > threshold || mag > 46) {
         hits++
         if (x < minX) minX = x
         if (x > maxX) maxX = x
@@ -407,207 +427,158 @@ function analyzeFrame(video, canvas) {
     }
   }
 
-  if (hits < CONFIG.minHits) return null
+  if (hits < 150) return null
 
-  const boxW = maxX - minX
-  const boxH = maxY - minY
-  if (boxW < 28 || boxH < 28) return null
+  const w = maxX - minX
+  const h = maxY - minY
+  const area = (w * h) / (size * size)
+  if (w < 14 || h < 14 || area < PROFILE.minArea || area > PROFILE.maxArea) return null
 
-  const areaRatio = (boxW * boxH) / total
-  if (areaRatio < 0.012) return null
-  if (areaRatio > 0.88) return null
+  const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h))
+  const fill = clamp(hits / Math.max(1, w * h), 0, 1)
+  const sharp = clamp(edge / (size * size) / 32, 0, 1)
+  const fit = clamp(area / 0.22, 0, 1)
+  const cardLike = Math.abs(ratio - PROFILE.creditCardRatio) < 0.18 && phase.value === 'top'
+  const confidenceValue = Math.round((fit * 0.34 + fill * 0.24 + sharp * 0.28 + (cardLike ? 0.14 : 0.06)) * 100)
 
-  const fill = hits / Math.max(1, boxW * boxH)
-  const sharp = edgeEnergy / total
-  const sizeScore = clamp(areaRatio / 0.34, 0, 1)
-  const fillScore = clamp(fill / 0.34, 0, 1)
-  const sharpScore = clamp(sharp / 30, 0, 1)
-  const conf = Math.round((sizeScore * 0.36 + fillScore * 0.28 + sharpScore * 0.36) * 100)
-
-  const scale = pxPerCm.value
-  const dimA = scale ? Math.max(1, Math.round(boxW / scale)) : 0
-  const dimB = scale ? Math.max(1, Math.round(boxH / scale)) : 0
-
+  const dims = estimateDims(w, h, ratio, cardLike)
   return {
-    dimA,
-    dimB,
-    confidence: conf,
+    ...dims,
+    kind: cardLike ? 'card' : 'object',
+    confidence: clamp(confidenceValue, 1, 99),
+    message: confidenceValue > 68 ? 'Locking target' : 'Tracking shape',
     solidity: fill,
-    message: conf > 70 ? 'Ready. Hold still.' : 'Center and hold steady',
-    rawBbox: [ox + minX, oy + minY, boxW, boxH],
-    localBbox: [minX, minY, boxW, boxH],
-    norm: { x: minX / size, y: minY / size, w: boxW / size, h: boxH / size },
+    raw: { x: minX, y: minY, w, h },
+    norm: { x: minX / size, y: minY / size, w: w / size, h: h / size },
   }
+}
+
+function estimateDims(pxW, pxH, ratio, cardLike) {
+  if (cardLike) {
+    const longIsW = pxW >= pxH
+    return {
+      dimA: longIsW ? PROFILE.creditCardWidthCm : PROFILE.creditCardHeightCm,
+      dimB: longIsW ? PROFILE.creditCardHeightCm : PROFILE.creditCardWidthCm,
+    }
+  }
+
+  const guideCm = phase.value === 'side' ? PROFILE.sideGuideCm : PROFILE.topGuideCm
+  const size = PROFILE.processSize * PROFILE.guideRatio
+  const pxPerCm = size / guideCm
+  const perspectiveBoost = clamp(1 + (0.22 - Math.min(pxW, pxH) / PROFILE.processSize) * 0.28, 0.94, 1.08)
+  const a = Math.max(1, Math.round((pxW / pxPerCm) * perspectiveBoost))
+  const b = Math.max(1, Math.round((pxH / pxPerCm) * perspectiveBoost))
+
+  if (ratio > 3.2 && Math.min(a, b) <= 4) {
+    return { dimA: Math.max(a, b), dimB: Math.min(a, b) }
+  }
+
+  return { dimA: a, dimB: b }
+}
+
+function smooth(prev, next, forcedAlpha) {
+  if (!prev) return { ...next, prev: null }
+
+  const alpha = forcedAlpha ?? (next.confidence > 70 ? 0.42 : 0.28)
+  const predicted = {
+    x: prev.norm.x + velocity.x * 0.45,
+    y: prev.norm.y + velocity.y * 0.45,
+    w: prev.norm.w + velocity.w * 0.25,
+    h: prev.norm.h + velocity.h * 0.25,
+  }
+  const norm = {
+    x: lerp(predicted.x, next.norm.x, alpha),
+    y: lerp(predicted.y, next.norm.y, alpha),
+    w: lerp(predicted.w, next.norm.w, alpha),
+    h: lerp(predicted.h, next.norm.h, alpha),
+  }
+
+  velocity = {
+    x: norm.x - prev.norm.x,
+    y: norm.y - prev.norm.y,
+    w: norm.w - prev.norm.w,
+    h: norm.h - prev.norm.h,
+  }
+
+  return { ...next, norm, prev }
 }
 
 async function captureCurrent() {
-  if (phase.value === 'calibrate') return captureCalibration()
-  if (phase.value === 'top') return captureTop()
-  if (phase.value === 'side') return captureSide()
-}
-
-async function captureCalibration() {
-  if (busy.value) return
+  if (busy.value || !isLive.value) return
   busy.value = true
   frozen.value = true
   stopLoop()
   doFlash()
-  await sleep(140)
+  await sleep(100)
 
-  const found = lastGood || analyzeFrame(videoRef.value, workRef.value)
-  if (!found) return resumeWithMessage('Could not detect the card. Try more contrast.')
-
-  const longPx = Math.max(found.localBbox[2], found.localBbox[3])
-  const shortPx = Math.min(found.localBbox[2], found.localBbox[3])
-  const ratio = longPx / Math.max(1, shortPx)
-
-  if (ratio < 1.28 || ratio > 1.95) {
-    return resumeWithMessage('Card shape unclear. Align it flat inside the frame.')
+  const sample = medianSample()
+  if (!sample) {
+    busy.value = false
+    frozen.value = false
+    startLoop()
+    return
   }
 
-  const scaleLong = longPx / CONFIG.cardWidthCm
-  const scaleShort = shortPx / CONFIG.cardHeightCm
-  pxPerCm.value = (scaleLong + scaleShort) / 2
+  if (phase.value === 'top') {
+    const a = Math.max(sample.dimA, sample.dimB)
+    const b = Math.min(sample.dimA, sample.dimB)
+    topScan.value = { length: a, width: b, shape: guessShape(sample) }
+    topPreview.value = lastFrame
+    resetLive()
+    phase.value = 'side'
+    busy.value = false
+    frozen.value = false
+    await nextTick()
+    startLoop()
+    return
+  }
 
-  resetScan(false)
-  phase.value = 'top'
-  frozen.value = false
-  busy.value = false
-  await nextTick()
-  startLoop()
-}
+  const top = topScan.value
+  if (!top) {
+    phase.value = 'top'
+    busy.value = false
+    frozen.value = false
+    startLoop()
+    return
+  }
 
-async function captureTop() {
-  if (busy.value) return
-  busy.value = true
-  frozen.value = true
-  stopLoop()
-  doFlash()
-  await sleep(140)
-
-  const found = lastGood || analyzeFrame(videoRef.value, workRef.value)
-  if (!found || !found.dimA || !found.dimB) return resumeWithMessage('Could not measure item. Try again.')
-
-  topDims.value = medianDims(found)
-  topDims.value.shape = guessShape(topDims.value)
-  topPreview.value = lastFrame
-
-  resetScan(false)
-  phase.value = 'side'
-  frozen.value = false
-  busy.value = false
-  await nextTick()
-  startLoop()
-}
-
-async function captureSide() {
-  if (busy.value) return
-  busy.value = true
-  frozen.value = true
-  stopLoop()
-  doFlash()
-  await sleep(140)
-
-  const found = lastGood || analyzeFrame(videoRef.value, workRef.value)
-  if (!topDims.value) return retakeItem()
-  if (!found || !found.dimA || !found.dimB) return resumeWithMessage('Could not measure height. Try again.')
-
-  const side = medianDims(found)
-  const length = Math.max(topDims.value.dimA, topDims.value.dimB)
-  const width = Math.min(topDims.value.dimA, topDims.value.dimB)
-  const height = Math.max(1, Math.min(side.dimA, side.dimB))
-  const shape = topDims.value.shape
-
+  const height = Math.max(1, Math.min(sample.dimA, sample.dimB))
+  const shape = top.shape
   res.value = {
-    length,
-    width,
+    length: top.length,
+    width: top.width,
     height,
-    weight: estimateWeight(length, width, height, shape),
+    weight: estimateWeight(top.length, top.width, height, shape),
     shape,
   }
-
   sidePreview.value = lastFrame
   phase.value = 'result'
-  frozen.value = false
   busy.value = false
+  frozen.value = false
 }
 
-function medianDims(fallback) {
-  const list = stableHistory.map(x => x.result).filter(Boolean)
-  if (!list.length) return { dimA: fallback.dimA, dimB: fallback.dimB, solidity: fallback.solidity }
-
-  const a = list.map(x => x.dimA).sort((x, y) => x - y)
-  const b = list.map(x => x.dimB).sort((x, y) => x - y)
+function medianSample() {
+  const list = samples.length ? samples : smoothed ? [smoothed] : []
+  if (!list.length) return null
+  const a = list.map(item => item.dimA).sort((x, y) => x - y)
+  const b = list.map(item => item.dimB).sort((x, y) => x - y)
   const mid = Math.floor(list.length / 2)
-  const solidity = list.reduce((sum, x) => sum + x.solidity, 0) / list.length
-
-  return { dimA: a[mid], dimB: b[mid], solidity }
+  const base = list[list.length - 1]
+  return { ...base, dimA: a[mid], dimB: b[mid] }
 }
 
-function trackStability(bbox) {
-  stableHistory.push({ bbox, t: Date.now(), result: lastGood })
-  if (stableHistory.length > CONFIG.stableFrames) stableHistory.shift()
-
-  if (stableHistory.length < CONFIG.stableFrames) {
-    stablePct.value = Math.round((stableHistory.length / CONFIG.stableFrames) * 55)
-    return
-  }
-
-  const first = stableHistory[0]
-  const last = stableHistory[stableHistory.length - 1]
-
-  if (bboxIoU(first.bbox, last.bbox) < CONFIG.stableIou) {
-    stablePct.value = 0
-    stableHistory = []
-    autoFired = false
-    return
-  }
-
-  stablePct.value = Math.min(100, Math.round(((Date.now() - first.t) / CONFIG.autoMs) * 100))
-
-  if (readyToCapture.value && !autoFired) {
-    autoFired = true
-    autoTimer = window.setTimeout(captureCurrent, 160)
-  }
-}
-
-function resumeWithMessage(message) {
-  scanMessage.value = message
-  confidence.value = 20
-  stablePct.value = 0
-  stableHistory = []
-  autoFired = false
-  frozen.value = false
-  busy.value = false
-  startLoop()
-}
-
-function retakeItem() {
-  resetScan(false)
-  topDims.value = null
+function retake() {
+  resetLive()
+  topScan.value = null
   topPreview.value = ''
   sidePreview.value = ''
   res.value = { length: 0, width: 0, height: 0, weight: 0.1, shape: 'box' }
-  phase.value = pxPerCm.value ? 'top' : 'calibrate'
+  phase.value = 'top'
   nextTick(startLoop)
 }
 
-function resetScan(clearScale = true) {
-  bboxStyle.value = null
-  confidence.value = 0
-  stablePct.value = 0
-  scanMessage.value = 'Looking for object...'
-  stableHistory = []
-  lastGood = null
-  lastBox = null
-  autoFired = false
-  if (clearScale) pxPerCm.value = null
-  if (autoTimer) window.clearTimeout(autoTimer)
-  autoTimer = null
-}
-
 function confirm() {
-  emit('confirm', { ...res.value, calibratedPxPerCm: pxPerCm.value })
+  emit('confirm', { ...res.value, source: 'demo-smart-scan' })
   handleClose()
 }
 
@@ -617,106 +588,99 @@ function handleClose() {
   emit('close')
 }
 
-function stopStream() {
-  mediaStream?.getTracks().forEach(track => track.stop())
-  mediaStream = null
+function resetLive() {
+  confidence.value = 0
+  stablePct.value = 0
+  lockState.value = 'searching'
+  liveStatus.value = 'Finding object'
+  liveMetric.value = 'Real-time'
+  scaleLabel.value = 'Auto'
+  boxStyle.value = null
+  smoothed = null
+  locked = null
+  velocity = { x: 0, y: 0, w: 0, h: 0 }
+  samples = []
+  lockStartedAt = 0
+  if (autoTimer) clearTimeout(autoTimer)
+  autoTimer = null
 }
 
-function estimateBackground(gray, size) {
-  const samples = []
-  const edge = Math.max(8, Math.round(size * 0.065))
+function stopStream() {
+  stream?.getTracks().forEach(track => track.stop())
+  stream = null
+}
 
-  for (let y = 0; y < size; y += 4) {
-    for (let x = 0; x < size; x += 4) {
-      if (x < edge || y < edge || x > size - edge || y > size - edge) {
-        samples.push(gray[y * size + x])
-      }
+function cropSquare(w, h) {
+  const s = Math.min(w, h)
+  return { x: Math.round((w - s) / 2), y: Math.round((h - s) / 2), s }
+}
+
+function borderMedian(gray, size) {
+  const pad = Math.round(size * 0.08)
+  const values = []
+  for (let y = 0; y < size; y += 3) {
+    for (let x = 0; x < size; x += 3) {
+      if (x < pad || y < pad || x > size - pad || y > size - pad) values.push(gray[y * size + x])
     }
   }
-
-  samples.sort((a, b) => a - b)
-  return samples[Math.floor(samples.length / 2)] || 220
+  values.sort((a, b) => a - b)
+  return values[Math.floor(values.length / 2)] || 220
 }
 
-function smoothResult(prev, next) {
-  if (!prev) return next
-  const a = CONFIG.smoothing
-  return {
-    ...next,
-    norm: {
-      x: prev.norm.x + (next.norm.x - prev.norm.x) * a,
-      y: prev.norm.y + (next.norm.y - prev.norm.y) * a,
-      w: prev.norm.w + (next.norm.w - prev.norm.w) * a,
-      h: prev.norm.h + (next.norm.h - prev.norm.h) * a,
-    },
-  }
-}
-
-function normToStyle(norm) {
+function toStyle(norm) {
   const vp = viewportRef.value
   if (!vp) return null
-
-  const cW = vp.clientWidth
-  const cH = vp.clientHeight
-  const size = Math.min(cW, cH) * CONFIG.guideRatio
-  const ox = (cW - size) / 2
-  const oy = (cH - size) / 2
-
+  const side = Math.min(vp.clientWidth, vp.clientHeight)
+  const left = (vp.clientWidth - side) / 2
+  const top = (vp.clientHeight - side) / 2
   return {
-    left: `${ox + norm.x * size}px`,
-    top: `${oy + norm.y * size}px`,
-    width: `${norm.w * size}px`,
-    height: `${norm.h * size}px`,
+    left: `${left + norm.x * side}px`,
+    top: `${top + norm.y * side}px`,
+    width: `${norm.w * side}px`,
+    height: `${norm.h * side}px`,
   }
 }
 
-function bboxIoU(a, b) {
-  const ax2 = a[0] + a[2]
-  const ay2 = a[1] + a[3]
-  const bx2 = b[0] + b[2]
-  const by2 = b[1] + b[3]
-  const ix1 = Math.max(a[0], b[0])
-  const iy1 = Math.max(a[1], b[1])
-  const ix2 = Math.min(ax2, bx2)
-  const iy2 = Math.min(ay2, by2)
-  if (ix2 <= ix1 || iy2 <= iy1) return 0
-  const inter = (ix2 - ix1) * (iy2 - iy1)
-  return inter / (a[2] * a[3] + b[2] * b[3] - inter)
+function boxDelta(a, b) {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.w - b.w) * 0.7 + Math.abs(a.h - b.h) * 0.7
 }
 
-function guessShape({ dimA, dimB, solidity = 0.3 }) {
-  const ratio = Math.max(dimA, dimB) / Math.max(1, Math.min(dimA, dimB))
-  if (Math.min(dimA, dimB) <= 3) return 'envelope'
-  if (solidity < 0.2) return 'bag'
-  if (ratio < 1.22 && solidity > 0.32) return 'cylinder'
+function guessShape(sample) {
+  const ratio = Math.max(sample.dimA, sample.dimB) / Math.max(1, Math.min(sample.dimA, sample.dimB))
+  if (sample.kind === 'card' || Math.min(sample.dimA, sample.dimB) <= 3) return 'envelope'
+  if (sample.solidity < 0.18) return 'bag'
+  if (ratio < 1.18 && sample.solidity > 0.28) return 'cylinder'
   return 'box'
 }
 
 function estimateWeight(l, w, h, shape) {
-  const volume = l * w * h
-  const density = {
-    box: 0.00026,
-    cylinder: 0.00032,
-    bag: 0.00018,
-    envelope: 0.00006,
-    irregular: 0.00022,
-  }[shape] || 0.00022
-
-  return Math.max(0.1, Math.round(volume * density * 10) / 10)
+  const density = { box: 0.00024, cylinder: 0.0003, bag: 0.00016, envelope: 0.00005, irregular: 0.00022 }[shape] || 0.00022
+  return Math.max(0.1, Math.round(l * w * h * density * 10) / 10)
 }
 
-function cameraTitle(e) {
-  if (e?.name === 'NotAllowedError') return 'Camera access denied'
-  if (e?.name === 'NotFoundError') return 'No camera found'
-  if (e?.name === 'NotReadableError') return 'Camera already in use'
+function doFlash() {
+  flash.value = true
+  setTimeout(() => {
+    flash.value = false
+  }, 210)
+}
+
+function cameraTitle(error) {
+  if (error?.name === 'NotAllowedError') return 'Camera access denied'
+  if (error?.name === 'NotFoundError') return 'No camera found'
+  if (error?.name === 'NotReadableError') return 'Camera already in use'
   return 'Could not start camera'
 }
 
-function cameraSub(e) {
-  if (e?.name === 'NotAllowedError') return 'Allow camera access in browser settings, then try again.'
-  if (e?.name === 'NotFoundError') return 'No accessible camera was found on this device.'
-  if (e?.name === 'NotReadableError') return 'Close other apps using the camera and try again.'
-  return e?.message || 'Please reload and allow camera access.'
+function cameraSub(error) {
+  if (error?.name === 'NotAllowedError') return 'Allow camera access in browser settings, then try again.'
+  if (error?.name === 'NotFoundError') return 'No accessible camera was found on this device.'
+  if (error?.name === 'NotReadableError') return 'Close other apps using the camera and try again.'
+  return error?.message || 'Reload and allow camera access.'
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t
 }
 
 function clamp(v, min, max) {
@@ -724,14 +688,7 @@ function clamp(v, min, max) {
 }
 
 function sleep(ms) {
-  return new Promise(resolve => window.setTimeout(resolve, ms))
-}
-
-function doFlash() {
-  flash.value = true
-  window.setTimeout(() => {
-    flash.value = false
-  }, 220)
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 </script>
 
@@ -743,9 +700,7 @@ function doFlash() {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(232, 223, 160, 0.14), transparent 34%),
-    rgba(0, 0, 0, 0.9);
+  background: radial-gradient(circle at 50% -12%, rgba(42, 166, 255, 0.22), transparent 36%), rgba(2, 5, 9, 0.9);
   font-family: Montserrat, Inter, system-ui, sans-serif;
 }
 
@@ -756,73 +711,73 @@ function doFlash() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: #0b0d10;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 26px 26px 0 0;
-  box-shadow: 0 -24px 80px rgba(0, 0, 0, 0.45);
+  background: #070a0f;
+  box-shadow: 0 -30px 90px rgba(0, 0, 0, 0.5);
 }
 
-.ps-header {
+.ps-topbar {
   display: grid;
   grid-template-columns: 40px 1fr auto;
-  align-items: center;
   gap: 12px;
+  align-items: center;
   padding: 14px 16px 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015));
 }
 
-.ps-close {
+.ps-icon-btn {
   width: 36px;
   height: 36px;
   border: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 24px;
-  line-height: 1;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 20px;
+  font-weight: 900;
   cursor: pointer;
 }
 
-.ps-title-wrap {
+.ps-title {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.ps-title-wrap strong {
+.ps-title span,
+.ps-readout span {
+  color: rgba(127, 219, 255, 0.82);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.ps-title strong {
   color: #fff;
   font-size: 15px;
-  font-weight: 900;
+  font-weight: 950;
 }
 
-.ps-kicker {
-  color: rgba(232, 223, 160, 0.8);
-  font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-.ps-step {
+.ps-steps {
   display: flex;
   gap: 5px;
 }
 
-.ps-step span {
+.ps-steps i {
   width: 7px;
   height: 7px;
-  border-radius: 99px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
 }
 
-.ps-step .on {
-  background: #e8dfa0;
+.ps-steps .on {
+  background: #7fdbff;
 }
 
-.ps-step .done {
-  background: #22c55e;
+.ps-steps .done {
+  background: #33f0a1;
 }
 
 .ps-view {
@@ -830,7 +785,7 @@ function doFlash() {
   width: 100%;
   aspect-ratio: 1 / 1;
   overflow: hidden;
-  background: #020304;
+  background: #020509;
 }
 
 .ps-video,
@@ -842,21 +797,31 @@ function doFlash() {
 }
 
 .ps-video.frozen {
-  filter: brightness(0.78) saturate(0.9);
+  filter: brightness(0.78) saturate(0.92);
 }
 
 .ps-hidden {
   display: none;
 }
 
-.ps-vignette,
-.ps-result-shade {
+.ps-depth-grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.28), transparent 28%, transparent 70%, rgba(0, 0, 0, 0.45)),
-    radial-gradient(circle at center, transparent 48%, rgba(0, 0, 0, 0.42));
+  opacity: 0.24;
+  background-image:
+    linear-gradient(rgba(127, 219, 255, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(127, 219, 255, 0.13) 1px, transparent 1px);
+  background-size: 32px 32px;
+  transform: perspective(420px) rotateX(56deg) scale(1.4);
+  transform-origin: center bottom;
+}
+
+.ps-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at center, transparent 45%, rgba(0, 0, 0, 0.44)), linear-gradient(180deg, rgba(0, 0, 0, 0.34), transparent 32%, rgba(0, 0, 0, 0.5));
 }
 
 .ps-guide {
@@ -867,38 +832,30 @@ function doFlash() {
   pointer-events: none;
 }
 
-.ps-corners {
+.ps-guide svg {
   width: 76%;
   aspect-ratio: 1 / 1;
-  color: rgba(232, 223, 160, 0.92);
-  filter: drop-shadow(0 0 12px rgba(232, 223, 160, 0.35));
+  color: rgba(127, 219, 255, 0.95);
+  filter: drop-shadow(0 0 14px rgba(127, 219, 255, 0.36));
 }
 
-.ps-corners path {
+.ps-guide path {
   stroke: currentColor;
-  stroke-width: 6;
+  stroke-width: 7;
   stroke-linecap: round;
 }
 
-.ps-guide.ready .ps-corners {
-  color: #22c55e;
-  filter: drop-shadow(0 0 16px rgba(34, 197, 94, 0.48));
+.ps-guide.locked svg {
+  color: #33f0a1;
+  filter: drop-shadow(0 0 18px rgba(51, 240, 161, 0.45));
 }
 
-.ps-card-ghost {
+.ps-pulse {
   position: absolute;
-  width: 58%;
-  aspect-ratio: 1.586 / 1;
-  border: 1.5px dashed rgba(255, 255, 255, 0.34);
-  border-radius: 13px;
-  display: grid;
-  place-items: center;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-  letter-spacing: 0.13em;
-  background: rgba(255, 255, 255, 0.035);
+  width: 76%;
+  aspect-ratio: 1 / 1;
+  border: 1px solid rgba(127, 219, 255, 0.16);
+  animation: ps-pulse 1.7s ease-out infinite;
 }
 
 .ps-scanline {
@@ -906,94 +863,121 @@ function doFlash() {
   left: 12%;
   right: 12%;
   height: 2px;
-  background: linear-gradient(90deg, transparent, #e8dfa0 25%, #fff6b8 50%, #e8dfa0 75%, transparent);
-  animation: ps-scan 2.1s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, #7fdbff 24%, #fff 50%, #7fdbff 76%, transparent);
+  animation: ps-scan 1.35s ease-in-out infinite;
 }
 
 .ps-box {
   position: absolute;
-  border: 2px solid rgba(232, 223, 160, 0.94);
+  border: 1px solid rgba(127, 219, 255, 0.85);
   border-radius: 8px;
-  box-shadow: 0 0 0 1px rgba(232, 223, 160, 0.22), 0 0 22px rgba(232, 223, 160, 0.18);
+  box-shadow: 0 0 0 1px rgba(127, 219, 255, 0.2), 0 0 28px rgba(127, 219, 255, 0.22);
   pointer-events: none;
-  transition: left 0.12s ease, top 0.12s ease, width 0.12s ease, height 0.12s ease;
+  transition: left 80ms ease-out, top 80ms ease-out, width 100ms ease-out, height 100ms ease-out, border-color 120ms ease;
 }
 
-.ps-box.ready {
-  border-color: #22c55e;
-  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.28), 0 0 24px rgba(34, 197, 94, 0.22);
+.ps-box.locked {
+  border-color: #33f0a1;
+  box-shadow: 0 0 0 1px rgba(51, 240, 161, 0.24), 0 0 34px rgba(51, 240, 161, 0.24);
 }
 
-.ps-progress {
+.ps-box-corner {
   position: absolute;
-  right: -24px;
-  bottom: -24px;
-  width: 44px;
-  height: 44px;
+  width: 14px;
+  height: 14px;
+  border-color: currentColor;
+  color: inherit;
+}
+
+.ps-box-corner.tl { left: -2px; top: -2px; border-left: 3px solid; border-top: 3px solid; }
+.ps-box-corner.tr { right: -2px; top: -2px; border-right: 3px solid; border-top: 3px solid; }
+.ps-box-corner.bl { left: -2px; bottom: -2px; border-left: 3px solid; border-bottom: 3px solid; }
+.ps-box-corner.br { right: -2px; bottom: -2px; border-right: 3px solid; border-bottom: 3px solid; }
+
+.ps-ring {
+  position: absolute;
+  right: -25px;
+  bottom: -25px;
+  width: 48px;
+  height: 48px;
   transform: rotate(-90deg);
 }
 
-.ps-progress circle {
-  fill: none;
+.ps-ring circle {
+  fill: rgba(0, 0, 0, 0.35);
   stroke-width: 3;
 }
 
-.ps-progress circle:first-child {
-  stroke: rgba(255, 255, 255, 0.16);
+.ps-ring circle:first-child {
+  stroke: rgba(255, 255, 255, 0.18);
 }
 
-.ps-progress circle:last-child {
-  stroke: #22c55e;
+.ps-ring circle:last-child {
+  fill: none;
+  stroke: #33f0a1;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.18s ease;
+  transition: stroke-dashoffset 100ms linear;
 }
 
-.ps-live-pill,
-.ps-result-mark {
+.ps-hud,
+.ps-result-chip {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
-  background: rgba(5, 7, 10, 0.78);
+  background: rgba(4, 10, 16, 0.76);
   backdrop-filter: blur(14px);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
 }
 
-.ps-live-pill {
+.ps-hud {
   bottom: 12px;
-  min-width: min(86%, 390px);
+  width: min(88%, 410px);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 12px;
-  color: rgba(255, 255, 255, 0.78);
+  padding: 9px 12px;
+}
+
+.ps-hud div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ps-hud span,
+.ps-hud b {
+  color: rgba(255, 255, 255, 0.76);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 850;
 }
 
-.ps-live-pill strong {
-  color: #e8dfa0;
+.ps-hud strong {
+  color: #7fdbff;
+  font-size: 12px;
+  font-weight: 950;
 }
 
-.ps-live-pill.good strong {
-  color: #22c55e;
+.ps-hud.locked strong {
+  color: #33f0a1;
 }
 
-.ps-result-mark {
+.ps-result-chip {
   bottom: 14px;
   padding: 8px 16px;
-  color: #22c55e;
+  color: #33f0a1;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 950;
 }
 
 .ps-flash {
   position: absolute;
   inset: 0;
   background: rgba(255, 255, 255, 0.72);
-  animation: ps-flash 0.22s ease-out forwards;
+  animation: ps-flash 210ms ease-out forwards;
   pointer-events: none;
 }
 
@@ -1011,44 +995,37 @@ function doFlash() {
 
 .ps-state strong {
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 950;
 }
 
 .ps-state span {
-  max-width: 320px;
-  color: rgba(255, 255, 255, 0.48);
+  max-width: 310px;
+  color: rgba(255, 255, 255, 0.5);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
-.ps-orbit {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  border: 1px solid rgba(232, 223, 160, 0.22);
+.ps-loader {
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(127, 219, 255, 0.22);
 }
 
-.ps-orbit i,
+.ps-loader i,
 .ps-spinner {
   display: block;
   border-radius: 50%;
-  animation: ps-spin 0.8s linear infinite;
+  animation: ps-spin 760ms linear infinite;
 }
 
-.ps-orbit i {
+.ps-loader i {
   width: 34px;
   height: 34px;
   border: 3px solid rgba(255, 255, 255, 0.12);
-  border-top-color: #e8dfa0;
-}
-
-.ps-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2.5px solid rgba(17, 17, 17, 0.2);
-  border-top-color: #111;
+  border-top-color: #7fdbff;
 }
 
 .ps-error {
@@ -1056,10 +1033,10 @@ function doFlash() {
   height: 44px;
   display: grid;
   place-items: center;
-  border: 2px solid #ef4444;
+  border: 2px solid #ff5c7a;
   border-radius: 50%;
-  color: #ef4444;
-  font-weight: 900;
+  color: #ff5c7a;
+  font-weight: 950;
 }
 
 .ps-panel {
@@ -1067,56 +1044,64 @@ function doFlash() {
   flex-direction: column;
   gap: 11px;
   padding: 14px 16px max(18px, env(safe-area-inset-bottom, 18px));
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
-    #0b0d10;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent), #070a0f;
 }
 
 .ps-hint {
   margin: 0;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.54);
   font-size: 11px;
   font-weight: 650;
   line-height: 1.45;
   text-align: center;
 }
 
-.ps-calibration {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: rgba(34, 197, 94, 0.09);
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.ps-calibration strong {
-  color: #22c55e;
-}
-
-.ps-meter {
+.ps-confidence {
   height: 5px;
   overflow: hidden;
-  border-radius: 99px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
 }
 
-.ps-meter div {
+.ps-confidence span {
+  display: block;
   height: 100%;
   border-radius: inherit;
-  background: #e8dfa0;
-  transition: width 0.18s ease, background 0.18s ease;
+  background: linear-gradient(90deg, #7fdbff, #d6f6ff);
+  transition: width 90ms linear;
 }
 
-.ps-meter .good {
-  background: #22c55e;
+.ps-confidence .locked {
+  background: linear-gradient(90deg, #33f0a1, #d8ffe9);
 }
 
-.ps-main-btn,
-.ps-soft-btn {
+.ps-readout {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.ps-readout div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.ps-readout strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 12px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ps-primary,
+.ps-soft {
   min-height: 46px;
   border: 0;
   border-radius: 14px;
@@ -1125,25 +1110,32 @@ function doFlash() {
   cursor: pointer;
 }
 
-.ps-main-btn {
+.ps-primary {
+  flex: 1;
   display: grid;
   place-items: center;
-  flex: 1;
-  background: linear-gradient(180deg, #fff3b8, #e8dfa0);
-  color: #101114;
-  box-shadow: 0 12px 28px rgba(232, 223, 160, 0.16);
+  background: linear-gradient(180deg, #dff8ff, #7fdbff);
+  color: #071018;
+  box-shadow: 0 14px 34px rgba(127, 219, 255, 0.18);
 }
 
-.ps-main-btn:disabled {
-  opacity: 0.55;
+.ps-primary:disabled {
+  opacity: 0.58;
   cursor: not-allowed;
 }
 
-.ps-soft-btn {
+.ps-soft {
   padding: 0 16px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.075);
   color: rgba(255, 255, 255, 0.78);
+}
+
+.ps-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(7, 16, 24, 0.2);
+  border-top-color: #071018;
 }
 
 .ps-previews {
@@ -1152,10 +1144,11 @@ function doFlash() {
   gap: 8px;
 }
 
-.ps-previews div {
+.ps-previews figure {
   position: relative;
-  aspect-ratio: 1.7 / 1;
+  aspect-ratio: 1.72 / 1;
   overflow: hidden;
+  margin: 0;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.07);
 }
@@ -1166,7 +1159,7 @@ function doFlash() {
   object-fit: cover;
 }
 
-.ps-previews span {
+.ps-previews figcaption {
   position: absolute;
   left: 8px;
   bottom: 7px;
@@ -1180,7 +1173,7 @@ function doFlash() {
 
 .ps-dims {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
@@ -1194,8 +1187,8 @@ function doFlash() {
   color: rgba(255, 255, 255, 0.38);
   font-size: 9px;
   font-weight: 900;
-  text-transform: uppercase;
   letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .ps-dims label > div {
@@ -1214,26 +1207,26 @@ function doFlash() {
   border: 0;
   outline: 0;
   background: transparent;
-  color: #e8dfa0;
+  color: #7fdbff;
   font: inherit;
   font-size: 19px;
   font-weight: 950;
 }
 
 .ps-dims em {
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.36);
   font-size: 11px;
   font-style: normal;
-  font-weight: 800;
+  font-weight: 850;
 }
 
-.ps-shapes {
+.ps-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
 }
 
-.ps-shapes button {
+.ps-chips button {
   padding: 7px 11px;
   border: 1px solid rgba(255, 255, 255, 0.11);
   border-radius: 999px;
@@ -1245,10 +1238,10 @@ function doFlash() {
   cursor: pointer;
 }
 
-.ps-shapes .on {
-  border-color: rgba(232, 223, 160, 0.9);
-  background: rgba(232, 223, 160, 0.14);
-  color: #e8dfa0;
+.ps-chips .on {
+  border-color: rgba(127, 219, 255, 0.9);
+  background: rgba(127, 219, 255, 0.14);
+  color: #7fdbff;
 }
 
 .ps-actions {
@@ -1257,31 +1250,22 @@ function doFlash() {
 }
 
 @keyframes ps-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes ps-scan {
-  0%, 100% {
-    top: 12%;
-    opacity: 0.25;
-  }
+  0%, 100% { top: 12%; opacity: 0.25; }
+  50% { top: 84%; opacity: 1; }
+}
 
-  50% {
-    top: 84%;
-    opacity: 1;
-  }
+@keyframes ps-pulse {
+  from { opacity: 0.36; transform: scale(0.96); }
+  to { opacity: 0; transform: scale(1.08); }
 }
 
 @keyframes ps-flash {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
-  }
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @media (min-width: 560px) {
@@ -1290,8 +1274,8 @@ function doFlash() {
   }
 
   .ps-shell {
-    border-radius: 26px;
     max-height: 94dvh;
+    border-radius: 26px;
   }
 }
 </style>
