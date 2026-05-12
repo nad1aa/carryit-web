@@ -88,6 +88,7 @@
             Apple
           </button>
         </div>
+        <p v-if="authError" class="si-auth-error">{{ authError }}</p>
       </form>
 
       <p class="si-signup-link">
@@ -112,11 +113,13 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.js'
+import { useAppStore } from '@/stores/app.js'
 import { mockUsers } from '@/data/mock.js'
 
 const router      = useRouter()
 const route       = useRoute()
 const authStore   = useAuthStore()
+const appStore    = useAppStore()
 const email       = ref('')
 const password    = ref('')
 const showPw      = ref(false)
@@ -125,6 +128,7 @@ const loading     = ref(false)
 const forgotMsg   = ref(false)
 const role        = ref('sender')
 const ssoLoading  = ref('')
+const authError   = ref('')
 
 const roles = [
   {
@@ -164,13 +168,19 @@ async function submit() {
 }
 
 async function handleSSO(provider) {
+  authError.value = ''
   ssoLoading.value = provider
-  await new Promise(r => setTimeout(r, 1100))
-  const selectedRole = role.value === 'both' ? 'sender' : role.value
-  const user = mockUsers.find(item => item.role === selectedRole) || mockUsers[0]
-  authStore.setUser(user)
-  ssoLoading.value = ''
-  router.push(route.query.redirect || ROLE_ROUTES[role.value])
+  try {
+    if (provider === 'google') await authStore.signInWithGoogle()
+    else await authStore.signInWithApple()
+    appStore.showSnackbar(`Signed in with ${provider === 'google' ? 'Google' : 'Apple'}`, 'success')
+    router.push(route.query.redirect || ROLE_ROUTES[role.value])
+  } catch (error) {
+    authError.value = error?.message || `${provider} sign-in could not be completed.`
+    appStore.showSnackbar(authError.value, 'error')
+  } finally {
+    ssoLoading.value = ''
+  }
 }
 </script>
 
@@ -434,6 +444,17 @@ async function handleSSO(provider) {
   transition: background 0.15s, border-color 0.15s;
 }
 .si-sso-btn:hover { background: #fff; border-color: rgba(17,17,17,0.35); }
+.si-auth-error {
+  margin: -6px 0 0;
+  border: 1.5px solid #b0392e;
+  background: rgba(176,57,46,0.08);
+  color: #8e2c24;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
 
 /* Sign up link */
 .si-signup-link {

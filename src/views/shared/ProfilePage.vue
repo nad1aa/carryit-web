@@ -150,21 +150,57 @@
       <section class="passport-section">
         <div class="section-heading">
           <span>Passport stamps</span>
-          <small>Travel achievements and delivery milestones</small>
+          <small>Journey log, unlocked routes, and travel keepsakes</small>
         </div>
-        <div class="stamp-grid">
-          <article v-for="(stamp, index) in passportStamps" :key="stamp.code" class="stamp-card" :class="[`tone-${index % 4}`, { 'stamp-card--image': stamp.image }]">
-            <img v-if="stamp.image" class="stamp-image" :src="stamp.image" :alt="`${stamp.title} stamp`" />
-            <div v-else class="stamp-mark">
+        <div
+          class="passport-stage"
+          :style="passportTilt"
+          @pointermove="handlePassportMove"
+          @pointerleave="resetPassportTilt"
+        >
+          <div class="passport-glow" />
+          <img class="passport-base" src="/assets/passport-spread.png" alt="Open passport pages" />
+          <div class="passport-shadow-page passport-shadow-page--left" />
+          <div class="passport-shadow-page passport-shadow-page--right" />
+          <div class="passport-fold" />
+
+          <button class="stamp-replay" type="button" @click="replayStampUnlock">
+            Replay stamp
+          </button>
+
+          <article
+            v-for="(stamp, index) in passportStamps"
+            :key="stamp.code"
+            class="passport-stamp"
+            :class="[
+              { 'passport-stamp--image': stamp.image, 'is-new': index === unlockedStampIndex && stampSequenceKey > 0 },
+              `passport-stamp--${index + 1}`,
+            ]"
+            :style="stampStyle(stamp, index)"
+          >
+            <span v-if="index === unlockedStampIndex" class="stamp-impact-ring" />
+            <img v-if="stamp.image" class="passport-stamp-img" :src="stamp.image" :alt="`${stamp.title} stamp`" />
+            <div v-else class="passport-stamp-mark">
               <span>{{ stamp.code }}</span>
               <small>{{ stamp.kind }}</small>
             </div>
-            <div class="stamp-copy">
+            <div class="passport-stamp-copy">
               <strong>{{ stamp.title }}</strong>
               <span>{{ stamp.caption }}</span>
             </div>
             <b>{{ stamp.date }}</b>
           </article>
+
+          <div class="passport-note passport-note--left">
+            <span>Collected</span>
+            <strong>{{ passportStamps.length }}</strong>
+            <small>travel memories</small>
+          </div>
+          <div class="passport-note passport-note--right">
+            <span>Next route</span>
+            <strong>{{ profile.role === 'traveler' ? 'BRU' : 'TUN' }}</strong>
+            <small>stamp pending</small>
+          </div>
         </div>
       </section>
 
@@ -219,6 +255,9 @@ import { mockBookings, mockTrips } from '@/data/mock.js'
 const router = useRouter()
 const authStore = useAuthStore()
 const editMode = ref(false)
+const passportTilt = reactive({ '--tilt-x': '0deg', '--tilt-y': '0deg', '--glow-x': '50%', '--glow-y': '50%' })
+const stampSequenceKey = ref(0)
+const unlockedStampIndex = ref(2)
 
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 const profile = computed(() => authStore.user || {})
@@ -305,9 +344,9 @@ const trustChips = computed(() => profile.value.role === 'traveler'
 const passportStamps = computed(() => {
   const trips = mockTrips.filter(trip => trip.travelerId === profile.value.id)
   const featuredStamps = [
-    { code: 'CAI', kind: 'earned', title: 'Cairo stamp', caption: 'Pyramids of Giza route badge', date: 'Egypt', image: '/assets/stamp-cairo.jpg' },
-    { code: 'LON', kind: 'earned', title: 'London stamp', caption: 'Postage revenue collector badge', date: 'UK', image: '/assets/stamp-london.jpg' },
-    { code: 'ROM', kind: 'earned', title: 'Roma stamp', caption: 'Colosseum route badge', date: 'Italy', image: '/assets/stamp-roma.jpg' },
+    { code: 'LON', kind: 'earned', title: 'London stamp', caption: 'Postage revenue collector badge', date: 'UK', image: '/assets/stamp-london-cutout.png', x: 12, y: 17, rotate: -8, size: 31 },
+    { code: 'CAI', kind: 'earned', title: 'Cairo stamp', caption: 'Pyramids of Giza route badge', date: 'Egypt', image: '/assets/stamp-cairo-cutout.png', x: 52, y: 12, rotate: 7, size: 24 },
+    { code: 'ROM', kind: 'earned', title: 'Roma stamp', caption: 'Colosseum route badge', date: 'Italy', image: '/assets/stamp-roma-cutout.png', x: 58, y: 46, rotate: -5, size: 27 },
   ]
   const routeStamps = trips.slice(0, 2).map(trip => ({
     code: cityCode(trip.destination),
@@ -315,6 +354,10 @@ const passportStamps = computed(() => {
     title: `${trip.origin} to ${trip.destination}`,
     caption: `${trip.availableKg} kg capacity cleared`,
     date: new Date(trip.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    x: cityCode(trip.destination) === 'LYS' ? 20 : 36,
+    y: cityCode(trip.destination) === 'LYS' ? 54 : 35,
+    rotate: cityCode(trip.destination) === 'LYS' ? 9 : -11,
+    size: 17,
   }))
 
   return [
@@ -338,6 +381,38 @@ function cityCode(city = '') {
 
 function money(value) {
   return `${Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} DT`
+}
+
+function stampStyle(stamp, index) {
+  return {
+    '--stamp-x': `${stamp.x ?? 18 + index * 12}%`,
+    '--stamp-y': `${stamp.y ?? 20 + index * 9}%`,
+    '--stamp-rotate': `${stamp.rotate ?? 0}deg`,
+    '--stamp-size': `${stamp.size ?? 20}%`,
+    '--stamp-delay': `${index * 120}ms`,
+    '--stamp-key': stampSequenceKey.value,
+  }
+}
+
+function handlePassportMove(event) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  const x = (event.clientX - rect.left) / rect.width
+  const y = (event.clientY - rect.top) / rect.height
+  passportTilt['--tilt-y'] = `${(x - 0.5) * 5}deg`
+  passportTilt['--tilt-x'] = `${(0.5 - y) * 4}deg`
+  passportTilt['--glow-x'] = `${x * 100}%`
+  passportTilt['--glow-y'] = `${y * 100}%`
+}
+
+function resetPassportTilt() {
+  passportTilt['--tilt-x'] = '0deg'
+  passportTilt['--tilt-y'] = '0deg'
+  passportTilt['--glow-x'] = '50%'
+  passportTilt['--glow-y'] = '50%'
+}
+
+function replayStampUnlock() {
+  stampSequenceKey.value += 1
 }
 
 function saveEdit() {
@@ -871,112 +946,187 @@ function handleLogout() {
   font-weight: 800;
 }
 
-.stamp-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.stamp-card {
-  min-height: 154px;
-  border: 2px solid currentColor;
-  background: #fffaf0;
-  color: #cf3a2c;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+.passport-stage {
   position: relative;
-  overflow: hidden;
-  transition: transform .18s cubic-bezier(.2,.8,.2,1);
+  width: min(900px, 100%);
+  margin: 8px auto 0;
+  aspect-ratio: 1.52 / 1;
+  perspective: 1200px;
+  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transition: transform 420ms cubic-bezier(.2,.8,.2,1);
+  transform-style: preserve-3d;
+  isolation: isolate;
 }
 
-.stamp-card:hover {
-  transform: translateY(-3px) rotate(-1deg);
-}
-
-.stamp-card--image {
-  color: #171a3a;
-  padding: 10px;
-  background: #f7f0dc;
-}
-
-.stamp-card::before {
-  content: '';
+.passport-glow {
   position: absolute;
-  inset: 8px;
-  border: 1.5px dashed currentColor;
-  opacity: .58;
-}
-
-.stamp-card::after {
-  content: '';
-  position: absolute;
-  width: 92px;
-  height: 92px;
-  right: -22px;
-  bottom: -26px;
-  border: 2px solid currentColor;
-  border-radius: 50%;
-  opacity: .18;
-}
-
-.tone-1 { color: #171a3a; }
-.tone-2 { color: #2c6e7f; }
-.tone-3 { color: #9b7a28; }
-
-.stamp-card--image::before,
-.stamp-card--image::after {
-  display: none;
-}
-
-.stamp-image {
-  position: relative;
+  inset: -8%;
+  background: radial-gradient(circle at var(--glow-x) var(--glow-y), rgba(255,255,255,.46), transparent 34%);
+  filter: blur(10px);
+  opacity: .75;
+  pointer-events: none;
   z-index: 1;
+}
+
+.passport-base {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
-  border: 1.5px solid rgba(23,26,58,.22);
-  background: #fffaf0;
-  filter: saturate(.94) contrast(1.03);
-  box-shadow: 2px 2px 0 rgba(23,26,58,.24);
+  height: 100%;
+  object-fit: contain;
+  z-index: 2;
+  filter: drop-shadow(0 24px 34px rgba(23,26,58,.24));
+  animation: passportFloat 7s ease-in-out infinite;
 }
 
-.stamp-card--image .stamp-copy {
-  margin-top: 12px;
-}
-
-.stamp-card--image b {
-  color: rgba(23,26,58,.58);
-  margin-top: 8px;
-}
-
-.stamp-mark,
-.stamp-copy,
-.stamp-card b {
-  position: relative;
+.passport-shadow-page {
+  position: absolute;
   z-index: 1;
+  top: 10%;
+  bottom: 8%;
+  width: 44%;
+  border-radius: 18px;
+  background: rgba(23,26,58,.11);
+  filter: blur(28px);
 }
 
-.stamp-mark {
-  width: 78px;
-  height: 78px;
+.passport-shadow-page--left { left: 4%; transform: rotate(-2deg); }
+.passport-shadow-page--right { right: 4%; transform: rotate(2deg); }
+
+.passport-fold {
+  position: absolute;
+  z-index: 4;
+  top: 8%;
+  bottom: 7%;
+  left: 49.7%;
+  width: 2.4%;
+  background: linear-gradient(90deg, transparent, rgba(23,26,58,.22), rgba(255,255,255,.24), transparent);
+  filter: blur(.4px);
+  pointer-events: none;
+}
+
+.stamp-replay {
+  position: absolute;
+  z-index: 12;
+  top: 8%;
+  right: 8%;
+  border: 1.5px solid rgba(23,26,58,.48);
+  background: rgba(250,246,236,.82);
+  color: #171a3a;
+  box-shadow: 2px 2px 0 rgba(23,26,58,.42);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.passport-stamp {
+  position: absolute;
+  z-index: 6;
+  left: var(--stamp-x);
+  top: var(--stamp-y);
+  width: var(--stamp-size);
+  min-width: 96px;
+  color: #cf3a2c;
+  transform: translate3d(0,0,34px) rotate(var(--stamp-rotate));
+  filter: drop-shadow(0 10px 9px rgba(23,26,58,.22));
+  animation:
+    stampDrift 6s ease-in-out infinite,
+    stampSettle 720ms cubic-bezier(.18,.9,.18,1.08) both;
+  animation-delay: calc(var(--stamp-delay)), calc(var(--stamp-delay));
+  transform-origin: 50% 55%;
+}
+
+.passport-stamp--image {
+  padding: 0;
+}
+
+.passport-stamp-img {
+  width: 100%;
+  display: block;
+  object-fit: contain;
+  filter: saturate(.96) contrast(1.02);
+}
+
+.passport-stamp-copy,
+.passport-stamp b {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.passport-stamp-copy {
+  bottom: -34px;
+  display: grid;
+  gap: 2px;
+  color: #171a3a;
+  text-shadow: 0 1px 0 rgba(250,246,236,.9);
+}
+
+.passport-stamp-copy strong {
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.passport-stamp-copy span {
+  font-size: 9px;
+  color: rgba(23,26,58,.6);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.passport-stamp:hover {
+  z-index: 10;
+  filter: drop-shadow(0 18px 16px rgba(23,26,58,.28));
+}
+
+.passport-stamp:hover .passport-stamp-copy,
+.passport-stamp:hover b {
+  opacity: 1;
+}
+
+.passport-stamp.is-new {
+  animation:
+    stampPress 1300ms cubic-bezier(.18,.9,.18,1.08) both,
+    stampDrift 6s ease-in-out 1500ms infinite;
+}
+
+.stamp-impact-ring {
+  position: absolute;
+  inset: 7%;
+  border: 2px solid rgba(207,58,44,.75);
+  border-radius: 12px;
+  opacity: 0;
+  transform: scale(.8);
+  animation: stampRing 1300ms cubic-bezier(.2,.8,.2,1) both;
+  pointer-events: none;
+}
+
+.passport-stamp-mark {
+  width: 100%;
+  aspect-ratio: 1 / .72;
   border: 2px solid currentColor;
-  border-radius: 50%;
   display: grid;
   place-items: center;
   align-content: center;
-  transform: rotate(-7deg);
+  background: rgba(250,246,236,.32);
+  box-shadow: inset 0 0 0 2px rgba(250,246,236,.35);
 }
 
-.stamp-mark span {
-  font-size: 21px;
+.passport-stamp-mark span {
+  font-size: clamp(18px, 3vw, 32px);
   font-weight: 900;
   line-height: 1;
 }
 
-.stamp-mark small,
-.stamp-card b {
+.passport-stamp-mark small,
+.passport-stamp b {
   font-family: 'JetBrains Mono', monospace;
   text-transform: uppercase;
   letter-spacing: .08em;
@@ -984,22 +1134,72 @@ function handleLogout() {
   font-weight: 800;
 }
 
-.stamp-copy {
+.passport-note {
+  position: absolute;
+  z-index: 5;
+  border: 1.5px dashed rgba(23,26,58,.34);
+  background: rgba(250,246,236,.36);
+  color: rgba(23,26,58,.68);
+  padding: 10px 12px;
   display: grid;
-  gap: 3px;
-  margin-top: 10px;
+  gap: 2px;
+  backdrop-filter: blur(1px);
 }
 
-.stamp-copy strong {
-  font-size: 15px;
-  line-height: 1.1;
+.passport-note span,
+.passport-note small {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 800;
 }
 
-.stamp-copy span {
-  font-size: 12px;
-  color: rgba(23,26,58,.6);
-  font-weight: 700;
-  line-height: 1.35;
+.passport-note strong {
+  font-size: 26px;
+  line-height: .9;
+  color: #171a3a;
+}
+
+.passport-note--left {
+  left: 13%;
+  bottom: 13%;
+  transform: rotate(-4deg);
+}
+
+.passport-note--right {
+  right: 16%;
+  bottom: 15%;
+  transform: rotate(3deg);
+}
+
+@keyframes passportFloat {
+  0%, 100% { transform: translateY(0) rotate(.08deg); }
+  50% { transform: translateY(-5px) rotate(-.08deg); }
+}
+
+@keyframes stampSettle {
+  0% { opacity: 0; transform: translate3d(0,-28px,90px) rotate(calc(var(--stamp-rotate) - 8deg)) scale(1.08); }
+  70% { opacity: 1; transform: translate3d(0,2px,34px) rotate(var(--stamp-rotate)) scale(.98); }
+  100% { opacity: 1; transform: translate3d(0,0,34px) rotate(var(--stamp-rotate)) scale(1); }
+}
+
+@keyframes stampPress {
+  0% { opacity: 0; transform: translate3d(0,-110px,180px) rotate(calc(var(--stamp-rotate) - 12deg)) scale(1.35); filter: drop-shadow(0 34px 24px rgba(23,26,58,.2)); }
+  48% { opacity: 1; transform: translate3d(0,3px,24px) rotate(var(--stamp-rotate)) scale(.92); filter: drop-shadow(0 2px 2px rgba(23,26,58,.24)); }
+  62% { transform: translate3d(0,-8px,70px) rotate(calc(var(--stamp-rotate) + 1deg)) scale(1.03); }
+  100% { opacity: 1; transform: translate3d(0,0,34px) rotate(var(--stamp-rotate)) scale(1); filter: drop-shadow(0 10px 9px rgba(23,26,58,.22)); }
+}
+
+@keyframes stampRing {
+  0%, 34% { opacity: 0; transform: scale(.68); }
+  45% { opacity: .9; transform: scale(.86); }
+  100% { opacity: 0; transform: scale(1.28); }
+}
+
+@keyframes stampDrift {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: -4px; }
 }
 
 .reviews-list {
@@ -1124,8 +1324,8 @@ function handleLogout() {
     grid-template-columns: 1fr;
   }
 
-  .stamp-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .passport-stage {
+    width: 100%;
   }
 }
 
@@ -1137,10 +1337,38 @@ function handleLogout() {
 
   .passport-hero,
   .metrics-grid,
-  .stamp-grid,
   .quick-actions,
   .edit-grid {
     grid-template-columns: 1fr;
+  }
+
+  .passport-section {
+    padding: 14px;
+  }
+
+  .passport-stage {
+    aspect-ratio: 1.25 / 1;
+  }
+
+  .passport-stamp {
+    min-width: 68px;
+  }
+
+  .passport-stamp--1 { width: 30%; left: 9%; top: 18%; }
+  .passport-stamp--2 { width: 25%; left: 54%; top: 13%; }
+  .passport-stamp--3 { width: 28%; left: 56%; top: 48%; }
+  .passport-stamp--4,
+  .passport-stamp--5,
+  .passport-stamp--6 { width: 20%; }
+
+  .passport-note {
+    display: none;
+  }
+
+  .stamp-replay {
+    top: 4%;
+    right: 5%;
+    padding: 7px 10px;
   }
 
   .hero-copy {
